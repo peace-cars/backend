@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://postgres:imhK3YrE2gv5G%28.@db.upylurzbdtuagbejyyuz.supabase.co:5432/postgres"
+}
+
+// ==========================================
+// Organizational Infrastructure
+// ==========================================
+
+model districts {
+  id          String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String     @db.VarChar(255)
+  code        String?    @unique @db.VarChar(10)
+  manager_id  String?    @db.Uuid
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+  
+  branches    branches[]
+  profiles    profiles[]
+}
+
+model branches {
+  id          String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  district_id String?    @db.Uuid
+  name        String     @db.VarChar(255)
+  code        String?    @unique @db.VarChar(10)
+  address     String?
+  phone_number String?   @db.VarChar(20)
+  is_active   Boolean?   @default(true)
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+
+  district    districts? @relation(fields: [district_id], references: [id], onDelete: Cascade)
+  profiles    profiles[]
+  vehicles    vehicles[]
+  trade_ins   trade_in_requests[]
+  shifts      staff_shifts[]
+}
+
+// ==========================================
+// RBAC System
+// ==========================================
+
+model roles {
+  id          String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String     @unique @db.VarChar(50)
+  description String?
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+
+  permissions role_permissions[]
+  profiles    profiles[]
+}
+
+model permissions {
+  id          String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  slug        String     @unique @db.VarChar(100)
+  description String?
+  created_at  DateTime?  @default(now()) @db.Timestamptz(6)
+
+  roles       role_permissions[]
+}
+
+model role_permissions {
+  role_id       String     @db.Uuid
+  permission_id String     @db.Uuid
+
+  role          roles       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission    permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@id([role_id, permission_id])
+}
+
+model profiles {
+  id                   String     @id @db.Uuid
+  role_id              String?    @db.Uuid
+  legacy_role          String?    @db.VarChar(50) // role_type enum in DB
+  full_name            String     @db.VarChar(255)
+  phone_number         String     @unique @db.VarChar(20)
+  
+  district_id          String?    @db.Uuid
+  branch_id            String?    @db.Uuid
+  
+  commission_tier      Decimal?   @default(1.0) @db.Decimal(5, 2)
+  avatar_url           String?
+  is_verified          Boolean?   @default(false)
+  is_inspector_verified Boolean?   @default(false)
+  gamification_points  Int?       @default(0)
+  performance_rating   Decimal?   @default(5.0) @db.Decimal(3, 2)
+  total_completed_tasks Int?      @default(0)
+  created_at           DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?  @default(now()) @db.Timestamptz(6)
+
+  role                 roles?     @relation(fields: [role_id], references: [id])
+  district             districts? @relation(fields: [district_id], references: [id])
+  branch               branches?  @relation(fields: [branch_id], references: [id])
+}
+
+// ==========================================
+// Core Entities
+// ==========================================
+
+model vehicles {
+  id                   String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  vin_chassis          String     @unique @db.VarChar(100)
+  make                 String     @db.VarChar(100)
+  model                String     @db.VarChar(100)
+  year                 Int
+  fuel                 String     @db.VarChar(50) // fuel_type enum
+  duty                 String     @db.VarChar(50) // duty_status enum
+  status               String?    @default("SOURCING") @db.VarChar(50) // vehicle_status enum
+  branch_id            String?    @db.Uuid
+  retail_price_etb     Decimal    @db.Decimal(12, 2)
+  created_at           DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?  @default(now()) @db.Timestamptz(6)
+
+  branch               branches?  @relation(fields: [branch_id], references: [id])
+}
+
+model trade_in_requests {
+  id                   String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  customer_id          String?    @db.Uuid
+  branch_id            String?    @db.Uuid
+  vehicle_make_model   String     @db.VarChar(255)
+  status               String?    @default("NEW_LEAD") @db.VarChar(50) // trade_in_status enum
+  created_at           DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?  @default(now()) @db.Timestamptz(6)
+
+  branch               branches?  @relation(fields: [branch_id], references: [id])
+}
+
+model staff_shifts {
+  id            String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  staff_id      String?    @db.Uuid
+  branch_id     String?    @db.Uuid
+  clocked_in_at DateTime?  @default(now()) @db.Timestamptz(6)
+  clocked_out_at DateTime? @db.Timestamptz(6)
+  is_active     Boolean?   @default(true)
+
+  branch        branches?  @relation(fields: [branch_id], references: [id])
+}

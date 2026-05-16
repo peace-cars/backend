@@ -1,0 +1,14 @@
+node_modules
+/dist
+/artifacts
+/build
+*.log
+
+# Keep environment variables out of version control
+.env
+.env.*
+
+/generated/prisma
+
+.DS_Store
+.vscode
