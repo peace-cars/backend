@@ -12,15 +12,30 @@ async function bootstrap() {
     transform: true,
   }));
 
-  // Strict Enterprise CORS Configuration for all Active Platforms
+  // Robust Enterprise Dynamic CORS Configuration
   app.enableCors({
-    origin: [
-      'http://localhost:5173', // Client Showroom
-      'http://localhost:5174', // Admin God Mode
-      'http://localhost:5175', // Staff Inspection PWA
-      'http://localhost',      // Capacitor Android/iOS
-      'capacitor://localhost', // Capacitor iOS
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = [
+        'http://localhost:5173', // Client Showroom
+        'http://localhost:5174', // Admin God Mode
+        'http://localhost:5175', // Staff Inspection PWA
+        'http://localhost',      // Capacitor Android/iOS
+        'capacitor://localhost', // Capacitor iOS
+      ];
+
+      const isAllowed = allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.onrender.com') ||
+        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin));
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
