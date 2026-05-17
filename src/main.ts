@@ -14,7 +14,7 @@ async function bootstrap() {
 
   // Robust Enterprise Dynamic CORS Configuration
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin) return callback(null, true);
       
       const allowedOrigins = [
@@ -28,7 +28,7 @@ async function bootstrap() {
       const isAllowed = allowedOrigins.includes(origin) ||
         origin.endsWith('.vercel.app') ||
         origin.endsWith('.onrender.com') ||
-        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin));
+        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin) ? true : false);
 
       if (isAllowed) {
         callback(null, true);
