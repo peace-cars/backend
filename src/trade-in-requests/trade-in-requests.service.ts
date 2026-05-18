@@ -273,15 +273,43 @@ export class TradeInRequestsService {
     return data;
   }
 
-  async approveLead(leadId: string, offerPrice: number, notes?: string) {
+  async approveLead(leadId: string, offerPrice: number, notes?: string, callerRole?: Role) {
     const admin = this.adminSupabase.getClient();
+
+    // Validate lead exists and is in an approvable state
+    const { data: existing, error: fetchError } = await admin
+      .from('trade_in_requests')
+      .select('status')
+      .eq('id', leadId)
+      .single();
+
+    if (fetchError || !existing) {
+      throw new BadRequestException('Trade-in request not found.');
+    }
+
+    const approvableStatuses = ['MANAGER_REVIEW', 'ESCALATED_TO_GM', 'INSPECTION_PENDING'];
+    if (!approvableStatuses.includes(existing.status)) {
+      throw new BadRequestException(
+        `Cannot approve a lead with status "${existing.status}". Expected one of: ${approvableStatuses.join(', ')}.`
+      );
+    }
+
+    // Write to the correct notes column based on the caller's role
+    const isGM = callerRole === Role.GENERAL_MANAGER;
+    const notesPayload: Record<string, any> = {
+      status: 'OFFER_MADE',
+      final_dealer_offer_etb: offerPrice,
+    };
+
+    if (isGM) {
+      notesPayload.gm_notes = notes || 'Valuation authorized by General Manager.';
+    } else {
+      notesPayload.dm_notes = notes || 'Valuation approved by District Manager.';
+    }
+
     const { data, error } = await admin
       .from('trade_in_requests')
-      .update({ 
-        status: 'OFFER_MADE',
-        final_dealer_offer_etb: offerPrice,
-        dm_notes: notes || 'Valuation approved by District Manager.'
-      })
+      .update(notesPayload)
       .eq('id', leadId)
       .select()
       .single();
@@ -290,14 +318,24 @@ export class TradeInRequestsService {
     return data;
   }
 
-  async rejectLead(leadId: string, reason: string) {
+  async rejectLead(leadId: string, reason: string, callerRole?: Role) {
     const admin = this.adminSupabase.getClient();
+
+    // Write to the correct notes column based on the caller's role
+    const isGM = callerRole === Role.GENERAL_MANAGER;
+    const notesPayload: Record<string, any> = {
+      status: 'REJECTED',
+    };
+
+    if (isGM) {
+      notesPayload.gm_notes = reason || 'Asset rejected by General Manager.';
+    } else {
+      notesPayload.dm_notes = reason || 'Asset did not meet registry standards.';
+    }
+
     const { data, error } = await admin
       .from('trade_in_requests')
-      .update({ 
-        status: 'REJECTED',
-        dm_notes: reason || 'Asset did not meet registry standards.'
-      })
+      .update(notesPayload)
       .eq('id', leadId)
       .select()
       .single();

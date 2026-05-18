@@ -61,17 +61,19 @@ export class TradeInRequestsController {
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   approveLead(
     @Param('id') id: string, 
-    @Body() data: { offerPrice: number, notes?: string }
+    @Body() data: { offerPrice: number, notes?: string },
+    @Req() req: any
   ) {
-    return this.service.approveLead(id, data.offerPrice, data.notes);
+    return this.service.approveLead(id, data.offerPrice, data.notes, req.user.role);
   }
 
   @Patch(':id/reject')
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   rejectLead(
     @Param('id') id: string, 
-    @Body() data: { reason: string }
+    @Body() data: { reason: string },
+    @Req() req: any
   ) {
-    return this.service.rejectLead(id, data.reason);
+    return this.service.rejectLead(id, data.reason, req.user.role);
   }
 }
