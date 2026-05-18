@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Logger } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { FCMService } from './fcm.service';
 
 @Controller('notifications')
 export class NotificationsController {
   private readonly logger = new Logger(NotificationsController.name);
   
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly fcmService: FCMService
+  ) {}
 
   @Get()
   async getAll(@Query('recipientId') recipientId?: string) {
@@ -56,5 +60,14 @@ export class NotificationsController {
     
     if (error) return { success: false, message: error.message };
     return { success: true };
+  }
+
+  @Post('register-fcm')
+  async registerFCMToken(@Body() data: { userId: string; token: string }) {
+    if (!data.userId || !data.token) {
+      return { success: false, message: 'Missing userId or token' };
+    }
+    const success = await this.fcmService.registerToken(data.userId, data.token);
+    return { success };
   }
 }

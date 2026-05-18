@@ -39,12 +39,18 @@ export class SupabaseService {
         const requiredBuckets = ['vehicles', 'documents'];
         const { data: existingBuckets } = await client.storage.listBuckets();
         const existingNames = (existingBuckets || []).map((b: any) => b.name);
+        
+        const allowedTypes = [
+          'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 
+          'image/heic', 'image/heif', 'image/gif', 'image/jfif', 
+          'image/svg+xml', 'application/pdf'
+        ];
 
         for (const bucketName of requiredBuckets) {
           if (!existingNames.includes(bucketName)) {
             const { error: createError } = await client.storage.createBucket(bucketName, {
               public: true,
-              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+              allowedMimeTypes: allowedTypes,
               fileSizeLimit: 10485760 // 10MB
             });
             if (createError) {
@@ -53,7 +59,17 @@ export class SupabaseService {
               this.logger.log(`Storage bucket '${bucketName}' created successfully.`);
             }
           } else {
-            this.logger.log(`Storage bucket '${bucketName}' already exists.`);
+            // Update existing bucket configuration to ensure allowedMimeTypes list is up-to-date!
+            const { error: updateError } = await client.storage.updateBucket(bucketName, {
+              public: true,
+              allowedMimeTypes: allowedTypes,
+              fileSizeLimit: 10485760
+            });
+            if (updateError) {
+              this.logger.warn(`Could not update bucket '${bucketName}': ${updateError.message}`);
+            } else {
+              this.logger.log(`Storage bucket '${bucketName}' updated successfully.`);
+            }
           }
         }
       } catch (err: any) {

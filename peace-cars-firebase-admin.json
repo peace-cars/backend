@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "peace-cars",
+  "private_key_id": "0e2e68b2404ed403bdb7eda358f808896cb15e2c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCxY0NTCH065U0M\nz2jCJECqKfeANXeOU17HAQSLymkfYsmLjWe565vq/O+nN0Rl4QXCzCPMVl5ltERU\nA05NHgik7MhkJkBGGISEsAUp7zppf/Nc2bOH4dWs+OrgqYKDXH7pnzdv0Vij5m2/\nvd3/n+tvuhlqC4ZOQx9haanpk/yvI0FqpJ424vppTmnQ/LX/pP4HK8bZrKkAV+2B\ntFB8EVlv0Z5SO52Qb2EVYURWvddU3QqGT4l0EbTg8+sVObhvX6osSg5W6tPswfOY\n+kop1czZHO/8ZlVywMguENyMUXPul17tsJCuHWk7eSyxUxR7EVFx/MtsQYXr92qE\nRF3D82o3AgMBAAECggEAOtH6+5gXioWJiKNoDeReiu5ykxFnrQqpJV0JiF8cf5tO\n0JcZm5VsdL3dq/mQFSZKNj9h6XqEP75IYAFeoATDAglAI7FpY7TykFsbwz2ABYa3\niITp2reAlqRNoiSjUfLEZKx2gf4Nof+hSdDoQcDiHYC8t6TNqrroN3GFtZ3sTphY\n+X7+9+e/tyWMhUZG5647Nge4+b2u1C3Kg4gJAWHINFnnPKCyr+OCmp/DNiSV/kA0\n/I7fepefClSMrHudxM9vgXRvc+7MRmJcTBlAU/Ib/zzm6FGOtKcw1AHrOVjH9ynU\nbh/k/tykkAEf56N6J8BimlujOlN5IotshIsDHFNTkQKBgQDlvnv7tSM6fCHokaWO\ntyF6QyTLNR80GuBY2UDhXrAySHNgtXtDbT2JtZvNOWx38eWhesWzOZ4pRUVOTtz4\nCtro5Ut7LvA/GTbc9q3rH1T0sC7HtQa1U8q+JfHqOtuR5efaWx3C25nkSqjyyQFy\n1nIJbnYo69AoTv/4xOuNvRgtUQKBgQDFqQOHHQC0NlxXj0JfBX60LFFNxLdjHyuy\nWhhC4Z8S/xQsCrg+YGbmLJyens01rNBSMEC8GbOOmdHbx9BRTQtT2NhQZNB7i0VF\ndGD4PUbDWiGX9TCZUMBE3ABZzzggt3hKnudHJheYszsDoiDaMN6/nVeaALbf9ElA\nMFXyvqgdBwKBgA6vT0N2f4r0dkJkVN27bONguVBX0+fDtAVZ1aDSKZb9NIrA7uEP\ncXiE6DGE8x7zkkbxDwP2sdpXeCeaONuN7hIm3d1A0dBmrzAOgG1f8lE1lbfkJUqf\n0Xy39i+PlYtM07YMTumumbaS4xupp3MMq/tYWSsib4q0Cf5/r8K+jHYRAoGASVWS\nrH9zMml0yzuomU6Vms1SgPL6QzleYfaRR8cj2M1ws4JqpyHnK4DjvuoWItLyG3wx\nmFhEySSCuvMgc/mMuVgbsYAl5aBfXAx4qcE6TuJS0mky1b8jBqlFLAz4uxK2+6CH\nGFump43f2FI/tBQroJYE2WtobiDZSIpmaQCZqOMCgYEAhgxxtTnPNNFhB+T6dCxf\nkRd9uqwINtfvQ/AJFjo2piuSsawssfCaHA5a3krSjnd7yhi7cHI3e0BmSLFEYnnC\ntzjP/5JljAHKv4kS902z0Hwm6Ihd0x4izlXra+OV6J2idXlQKSZCVTi8qqiuypJ3\n/glGrQ3PL6Fghv7m9e6i+l4=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@peace-cars.iam.gserviceaccount.com",
+  "client_id": "109070956481235236834",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40peace-cars.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
