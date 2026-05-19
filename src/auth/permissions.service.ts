@@ -17,16 +17,23 @@ export class PermissionsService {
     const client = this.supabaseService.getClient();
 
     // Fetch the target conversation
-    const { data: conv } = await client
+    const { data: conv, error } = await client
       .from('conversations')
       .select('customer_id, trade_in_id')
       .eq('id', conversationId)
       .single();
 
-    if (!conv) return false;
+    if (error || !conv) {
+      console.error(`[PermissionsService] Conversation ${conversationId} not found or error:`, error);
+      return false;
+    }
 
     // Customer or explicit owner
-    if (conv.customer_id === userId) return true;
+    if (conv.customer_id === userId) {
+      return true;
+    } else {
+      console.warn(`[PermissionsService] Ownership mismatch. conv.customer_id=${conv.customer_id}, userId=${userId}`);
+    }
 
     // For Staff/DM, check branch scoping
     if (userRole === Role.STAFF || userRole === Role.DISTRICT_MANAGER) {
