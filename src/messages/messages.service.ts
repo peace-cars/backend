@@ -1,6 +1,7 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { PermissionsService } from '../auth/permissions.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Role } from '../auth/roles.enums';
 
 @Injectable()
@@ -9,30 +10,33 @@ export class MessagesService {
 
   constructor(
     private readonly supabaseService: SupabaseScopedService,
-    private readonly permissions: PermissionsService
+    private readonly permissions: PermissionsService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
-  async getConversations(userId: string, isStaff = false) {
+  private isStaffRole(role: string): boolean {
+    return [Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR].includes(role as Role);
+  }
+
+  async getConversations(userId: string, userRole: string) {
     try {
       const supabase = this.supabaseService.getClient();
       let query = supabase.from('conversations').select(`
         *,
         vehicles(make, model, year),
-        profiles:customer_id(full_name)
+        profiles:customer_id(full_name),
+        assigned_staff:assigned_staff_id(full_name)
       `);
 
-      if (isStaff) {
-        // Staff/DM sees all conversations linked to their branch vehicles or trade-ins
-        const { data: profile } = await supabase.from('profiles').select('location_id, role').eq('id', userId).single();
-        
-        if (profile?.role === Role.GENERAL_MANAGER || profile?.role === Role.FINANCE_AUDITOR) {
-          // GM sees everything
-        } else if (profile?.location_id) {
-          // Filter by branch logic is complex in a single query with joins, 
-          // so for now we show all active leads but they are protected by the canAccess check when opened.
-          // In a production app, we would join trade_in_requests or vehicles to filter here.
+      if (this.isStaffRole(userRole)) {
+        if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
+          // GM/Auditor sees all conversations
+        } else if (userRole === Role.STAFF || userRole === Role.DISTRICT_MANAGER) {
+          // Staff sees: unclaimed OR claimed by them
+          query = query.or(`assigned_staff_id.is.null,assigned_staff_id.eq.${userId}`);
         }
       } else {
+        // Customers see only their own conversations
         query = query.eq('customer_id', userId);
       }
 
@@ -46,7 +50,6 @@ export class MessagesService {
   }
 
   async getMessages(userId: string, userRole: Role, conversationId: string) {
-    // 1. Ownership check
     const hasAccess = await this.permissions.canAccessConversation(userId, userRole, conversationId);
     if (!hasAccess) {
       this.logger.warn(`Access Denied: ${userId} tried to read conversation ${conversationId}`);
@@ -77,20 +80,34 @@ export class MessagesService {
       const supabase = this.supabaseService.getClient();
       let convId = data.conversationId;
 
-      // 1. Create Conversation if it doesn't exist
+      // 1. Create Conversation if it doesn't exist (customer initiating)
       if (!convId && data.vehicleId) {
-        const { data: newConv, error: convError } = await supabase
+        // Check for existing conversation for this customer+vehicle
+        const { data: existing } = await supabase
           .from('conversations')
-          .insert([{ 
-            customer_id: senderId, 
-            vehicle_id: data.vehicleId,
-            last_message: data.text 
-          }])
-          .select()
+          .select('id')
+          .eq('customer_id', senderId)
+          .eq('vehicle_id', data.vehicleId)
           .single();
-        
-        if (convError) throw convError;
-        convId = newConv.id;
+
+        if (existing) {
+          convId = existing.id;
+        } else {
+          const { data: newConv, error: convError } = await supabase
+            .from('conversations')
+            .insert([{ 
+              customer_id: senderId, 
+              vehicle_id: data.vehicleId,
+              last_message: data.text,
+              source: 'WEB',
+              status: 'OPEN'
+            }])
+            .select()
+            .single();
+          
+          if (convError) throw convError;
+          convId = newConv.id;
+        }
       }
 
       // 2. Ownership check for existing conversations
@@ -101,34 +118,164 @@ export class MessagesService {
         }
       }
 
-      // 3. Insert Message
+      // 3. Get sender name for display
+      let senderName = 'Unknown';
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', senderId)
+          .single();
+        senderName = profile?.full_name || 'Unknown';
+      } catch {}
+
+      // 4. Insert Message
       const { data: message, error: msgError } = await supabase
         .from('messages')
         .insert([{
           conversation_id: convId,
           sender_id: senderId,
-          text: data.text
+          sender_name: senderName,
+          text: data.text,
+          source: 'WEB'
         }])
         .select()
         .single();
       
       if (msgError) throw msgError;
 
-      // 4. Update Conversation timestamp
+      // 5. Staff first-responder claim logic
+      if (this.isStaffRole(userRole) && convId) {
+        const { data: conv } = await supabase
+          .from('conversations')
+          .select('assigned_staff_id, status')
+          .eq('id', convId)
+          .single();
+
+        if (conv && !conv.assigned_staff_id) {
+          // First staff to respond claims the conversation
+          await supabase
+            .from('conversations')
+            .update({ 
+              assigned_staff_id: senderId,
+              status: 'CLAIMED'
+            })
+            .eq('id', convId);
+          
+          this.logger.log(`Conversation ${convId} claimed by staff ${senderId}`);
+        }
+      }
+
+      // 6. Update Conversation timestamp and last message
       await supabase
         .from('conversations')
         .update({ last_message: data.text, updated_at: new Date().toISOString() })
         .eq('id', convId);
 
+      // 7. Check if this is a Telegram-sourced conversation → route reply through Telegram
+      if (this.isStaffRole(userRole) && convId) {
+        try {
+          const { data: conv } = await supabase
+            .from('conversations')
+            .select('source, telegram_chat_id')
+            .eq('id', convId)
+            .single();
+
+          if (conv?.source === 'TELEGRAM' && conv?.telegram_chat_id) {
+            // Emit event for Telegram reply (handled by TelegramService if injected)
+            this.logger.log(`Staff reply to Telegram conversation ${convId} → chat ${conv.telegram_chat_id}`);
+            // The TelegramService will pick this up via the notification system
+          }
+        } catch {}
+      }
+
+      // 8. Trigger real-time notifications via FCM/Web
+      if (convId) {
+        await this.notificationsService.notifyNewMessage(
+          convId,
+          senderId,
+          senderName,
+          data.text
+        );
+      }
+
       return message;
     } catch (err) {
       this.logger.error('Failed to send message', err);
-      // Temporarily log to file for debugging
-      const fs = require('fs');
-      try {
-        fs.appendFileSync('c:\\peaceCars\\backend\\chat-error.log', new Date().toISOString() + '\n' + JSON.stringify(err, Object.getOwnPropertyNames(err), 2) + '\n\n');
-      } catch (e) {}
       throw err;
     }
+  }
+
+  /**
+   * Staff claims an unclaimed conversation
+   */
+  async claimConversation(staffId: string, conversationId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: conv, error } = await supabase
+      .from('conversations')
+      .select('assigned_staff_id, status')
+      .eq('id', conversationId)
+      .single();
+
+    if (error || !conv) throw new NotFoundException('Conversation not found.');
+
+    if (conv.assigned_staff_id && conv.assigned_staff_id !== staffId) {
+      throw new ForbiddenException('This conversation is already claimed by another staff member.');
+    }
+
+    const { error: updateError } = await supabase
+      .from('conversations')
+      .update({ assigned_staff_id: staffId, status: 'CLAIMED' })
+      .eq('id', conversationId);
+
+    if (updateError) throw updateError;
+
+    this.logger.log(`Conversation ${conversationId} claimed by ${staffId}`);
+    return { success: true, message: 'Conversation claimed.' };
+  }
+
+  /**
+   * Resolve/close a conversation
+   */
+  async resolveConversation(userId: string, userRole: Role, conversationId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('assigned_staff_id')
+      .eq('id', conversationId)
+      .single();
+
+    if (!conv) throw new NotFoundException('Conversation not found.');
+
+    // Only assigned staff or GM can resolve
+    if (conv.assigned_staff_id !== userId && userRole !== Role.GENERAL_MANAGER) {
+      throw new ForbiddenException('Only the assigned staff or GM can resolve this conversation.');
+    }
+
+    await supabase
+      .from('conversations')
+      .update({ status: 'RESOLVED' })
+      .eq('id', conversationId);
+
+    return { success: true, message: 'Conversation resolved.' };
+  }
+
+  /**
+   * Admin reassigns a conversation to a different staff member
+   */
+  async reassignConversation(newStaffId: string, conversationId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { error } = await supabase
+      .from('conversations')
+      .update({ assigned_staff_id: newStaffId, status: 'CLAIMED' })
+      .eq('id', conversationId);
+
+    if (error) throw error;
+
+    this.logger.log(`Conversation ${conversationId} reassigned to ${newStaffId}`);
+    return { success: true, message: 'Conversation reassigned.' };
   }
 }

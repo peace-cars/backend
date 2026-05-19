@@ -44,112 +44,128 @@ export class RolesGuard implements CanActivate {
         const token = authHeader.split(' ')[1];
         
         try {
-          const { data: { user }, error } = await this.supabaseService.getClient().auth.getUser(token);
-          if (error || !user) throw new UnauthorizedException('Invalid JWT Token.');
+          // Check simple memory cache first (TTL 60s)
+          const now = Date.now();
+          const cacheKey = `auth_${token}`;
+          const cached = (global as any).__rolesCache?.get(cacheKey);
+          
+          if (cached && now - cached.timestamp < 60000) {
+            userData = cached.data;
+            request.user = userData;
+          } else {
+            const { data: { user }, error } = await this.supabaseService.getClient().auth.getUser(token);
+            if (error || !user) throw new UnauthorizedException('Invalid JWT Token.');
 
-          // Fetch Deep Profile with Roles, Permissions, AND Location→District hierarchy
-          const { data: profile, error: profileError } = await this.supabaseService.getClient()
-            .from('profiles')
-            .select(`
-              id,
-              full_name,
-              role,
-              location_id,
-              district_id,
-              phone_number,
-              is_verified,
-              gamification_points,
-              role_id,
-              roles (
-                name,
-                role_permissions (
-                  permissions (
-                    slug
+            // Fetch Deep Profile with Roles, Permissions, AND Location→District hierarchy
+            const { data: profile, error: profileError } = await this.supabaseService.getClient()
+              .from('profiles')
+              .select(`
+                id,
+                full_name,
+                role,
+                location_id,
+                district_id,
+                phone_number,
+                is_verified,
+                gamification_points,
+                role_id,
+                roles (
+                  name,
+                  role_permissions (
+                    permissions (
+                      slug
+                    )
                   )
                 )
-              )
-            `)
-            .eq('id', user.id)
-            .single();
-          
-          if (profileError || !profile) {
-            this.logger.error(`Profile not found for user ${user.id}: ${profileError?.message}`);
-            throw new UnauthorizedException('User profile not found or incomplete.');
-          }
-          
-          const profileData = profile as any;
-          const roleData = Array.isArray(profileData?.roles) ? profileData?.roles[0] : profileData?.roles;
-          const roleName = roleData?.name || profileData?.role || Role.USER;
-          const permissions = roleData?.role_permissions?.map((rp: any) => rp.permissions.slug) || [];
-          
-          // Resolve hierarchy: branchId from location_id, districtId from profile or location's district
-          let resolvedDistrictId = profileData?.district_id || null;
-          const resolvedBranchId = profileData?.location_id || null;
-
-          // If profile doesn't have district_id directly, derive it from the branch/location
-          if (!resolvedDistrictId && resolvedBranchId) {
-            try {
-              const { data: locationData } = await this.supabaseService.getClient()
-                .from('locations')
-                .select('district_id')
-                .eq('id', resolvedBranchId)
-                .single();
-              resolvedDistrictId = locationData?.district_id || null;
-            } catch (e) {
-              this.logger.warn(`Could not resolve district for branch ${resolvedBranchId}`);
+              `)
+              .eq('id', user.id)
+              .single();
+            
+            if (profileError || !profile) {
+              this.logger.error(`Profile not found for user ${user.id}: ${profileError?.message}`);
+              throw new UnauthorizedException('User profile not found or incomplete.');
             }
-          }
+            
+            const profileData = profile as any;
+            const roleData = Array.isArray(profileData?.roles) ? profileData?.roles[0] : profileData?.roles;
+            const roleName = roleData?.name || profileData?.role || Role.USER;
+            const permissions = roleData?.role_permissions?.map((rp: any) => rp.permissions.slug) || [];
+            
+            // Resolve hierarchy: branchId from location_id, districtId from profile or location's district
+            let resolvedDistrictId = profileData?.district_id || null;
+            const resolvedBranchId = profileData?.location_id || null;
 
-          // For DMs, also resolve all branch IDs within their district (for downstream scoping)
-          let scopedBranchIds: string[] = [];
-          if (roleName === Role.DISTRICT_MANAGER && resolvedDistrictId) {
-            try {
-              const { data: districtBranches } = await this.supabaseService.getClient()
-                .from('locations')
-                .select('id')
-                .eq('district_id', resolvedDistrictId);
-              scopedBranchIds = districtBranches?.map(b => b.id) || [];
-            } catch (e) {
-              this.logger.warn(`Could not resolve branches for district ${resolvedDistrictId}`);
+            // If profile doesn't have district_id directly, derive it from the branch/location
+            if (!resolvedDistrictId && resolvedBranchId) {
+              try {
+                const { data: locationData } = await this.supabaseService.getClient()
+                  .from('locations')
+                  .select('district_id')
+                  .eq('id', resolvedBranchId)
+                  .single();
+                resolvedDistrictId = locationData?.district_id || null;
+              } catch (e) {
+                this.logger.warn(`Could not resolve district for branch ${resolvedBranchId}`);
+              }
             }
-          }
 
-          // For GMs, get ALL branch IDs (global scope)
-          if (roleName === Role.GENERAL_MANAGER) {
-            try {
-              const { data: allBranches } = await this.supabaseService.getClient()
-                .from('locations')
-                .select('id');
-              scopedBranchIds = allBranches?.map(b => b.id) || [];
-            } catch (e) {
-              this.logger.warn('Could not resolve all branches for GM');
+            // For DMs, also resolve all branch IDs within their district (for downstream scoping)
+            let scopedBranchIds: string[] = [];
+            if (roleName === Role.DISTRICT_MANAGER && resolvedDistrictId) {
+              try {
+                const { data: districtBranches } = await this.supabaseService.getClient()
+                  .from('locations')
+                  .select('id')
+                  .eq('district_id', resolvedDistrictId);
+                scopedBranchIds = districtBranches?.map(b => b.id) || [];
+              } catch (e) {
+                this.logger.warn(`Could not resolve branches for district ${resolvedDistrictId}`);
+              }
             }
-          }
 
-          // For Staff, scope is just their own branch
-          if (roleName === Role.STAFF && resolvedBranchId) {
-            scopedBranchIds = [resolvedBranchId];
-          }
+            // For GMs, get ALL branch IDs (global scope)
+            if (roleName === Role.GENERAL_MANAGER) {
+              try {
+                const { data: allBranches } = await this.supabaseService.getClient()
+                  .from('locations')
+                  .select('id');
+                scopedBranchIds = allBranches?.map(b => b.id) || [];
+              } catch (e) {
+                this.logger.warn('Could not resolve all branches for GM');
+              }
+            }
 
-          userData = { 
-            id: user.id,
-            userId: user.id, // For legacy controller compatibility
-            email: user.email, 
-            role: roleName, 
-            fullName: profileData.full_name,
-            phoneNumber: profileData.phone_number,
-            branchId: resolvedBranchId,
-            districtId: resolvedDistrictId,
-            locationId: resolvedBranchId, // Legacy compat
-            isVerified: profileData?.is_verified,
-            gamificationPoints: profileData?.gamification_points,
-            permissions: permissions,
-            scopedBranchIds: scopedBranchIds, // Array of branch IDs this user can access
-          };
-          
-          request.user = userData;
-        } catch (err) {
-          this.logger.error("Auth Guard Error:", err.message);
+            // For Staff, scope is just their own branch
+            if (roleName === Role.STAFF && resolvedBranchId) {
+              scopedBranchIds = [resolvedBranchId];
+            }
+
+            userData = { 
+              id: user.id,
+              userId: user.id, // For legacy controller compatibility
+              email: user.email, 
+              role: roleName, 
+              fullName: profileData.full_name,
+              phoneNumber: profileData.phone_number,
+              branchId: resolvedBranchId,
+              districtId: resolvedDistrictId,
+              locationId: resolvedBranchId, // Legacy compat
+              isVerified: profileData?.is_verified,
+              gamificationPoints: profileData?.gamification_points,
+              permissions: permissions,
+              scopedBranchIds: scopedBranchIds, // Array of branch IDs this user can access
+            };
+            
+            // Set Cache
+            if (!(global as any).__rolesCache) {
+              (global as any).__rolesCache = new Map();
+            }
+            (global as any).__rolesCache.set(cacheKey, { data: userData, timestamp: now });
+
+            request.user = userData;
+          }
+        } catch (err: any) {
+          this.logger.error("Auth Guard Error: " + err.message);
           throw new UnauthorizedException('Authentication failed.');
         }
     } else {

@@ -1,16 +1,28 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
+import { GlobalExceptionFilter } from './common/http-exception.filter';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
+  // Security
+  app.use(helmet());
+
   // Enterprise Input Validation Strategy
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
   }));
+
+  // Global Exception Filter to sanitize errors
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Global Interceptor for logging request/response times
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   // Robust Enterprise Dynamic CORS Configuration
   app.enableCors({
