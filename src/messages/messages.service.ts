@@ -100,7 +100,7 @@ export class MessagesService {
               vehicle_id: data.vehicleId,
               last_message: data.text,
               source: 'WEB',
-              status: 'OPEN'
+              status: 'UNCLAIMED'
             }])
             .select()
             .single();
