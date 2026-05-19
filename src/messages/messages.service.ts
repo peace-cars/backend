@@ -80,7 +80,22 @@ export class MessagesService {
       const supabase = this.supabaseService.getClient();
       let convId = data.conversationId;
 
-      // 1. Create Conversation if it doesn't exist (customer initiating)
+      // Handle stringified nulls from client
+      if (convId === 'null' || convId === 'undefined') {
+        convId = null;
+      }
+
+      // Self-healing for client app (ChatPortal passes vehicleId).
+      // If any user has a stale conversation ID, ignore it and auto-correct.
+      if (convId && data.vehicleId) {
+        const hasAccess = await this.permissions.canAccessConversation(senderId, userRole, convId);
+        if (!hasAccess) {
+          this.logger.warn(`Stale conversation ID ${convId} detected for user ${senderId}. Overriding.`);
+          convId = null; 
+        }
+      }
+
+      // 1. Find or Create Conversation (customer initiating or recovering from stale ID)
       if (!convId && data.vehicleId) {
         // Check for existing conversation for this customer+vehicle
         const { data: existing } = await supabase
@@ -110,9 +125,9 @@ export class MessagesService {
         }
       }
 
-      // 2. Ownership check for existing conversations
-      if (data.conversationId && data.conversationId !== 'null' && data.conversationId !== 'undefined') {
-        const hasAccess = await this.permissions.canAccessConversation(senderId, userRole, data.conversationId);
+      // 2. Ownership check for Staff/Admins, or if vehicleId wasn't provided
+      if (convId) {
+        const hasAccess = await this.permissions.canAccessConversation(senderId, userRole, convId);
         if (!hasAccess) {
           throw new ForbiddenException('You do not have permission to post to this conversation.');
         }
