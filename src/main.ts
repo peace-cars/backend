@@ -4,12 +4,17 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { GlobalExceptionFilter } from './common/http-exception.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
   // Security
   app.use(helmet());
+
+  // Increase payload limits for Base64 image uploads
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // Enterprise Input Validation Strategy
   app.useGlobalPipes(new ValidationPipe({
