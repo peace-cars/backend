@@ -82,7 +82,7 @@ export class MessagesService {
 
       // Handle stringified nulls from client
       if (convId === 'null' || convId === 'undefined') {
-        convId = null;
+        convId = undefined;
       }
 
       // Self-healing for client app (ChatPortal passes vehicleId).
@@ -91,7 +91,7 @@ export class MessagesService {
         const hasAccess = await this.permissions.canAccessConversation(senderId, userRole, convId);
         if (!hasAccess) {
           this.logger.warn(`Stale conversation ID ${convId} detected for user ${senderId}. Overriding.`);
-          convId = null; 
+          convId = undefined; 
         }
       }
 
