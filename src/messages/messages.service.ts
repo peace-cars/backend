@@ -111,7 +111,7 @@ export class MessagesService {
       }
 
       // 2. Ownership check for existing conversations
-      if (data.conversationId) {
+      if (data.conversationId && data.conversationId !== 'null' && data.conversationId !== 'undefined') {
         const hasAccess = await this.permissions.canAccessConversation(senderId, userRole, data.conversationId);
         if (!hasAccess) {
           throw new ForbiddenException('You do not have permission to post to this conversation.');
