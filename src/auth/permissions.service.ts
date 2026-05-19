@@ -19,7 +19,7 @@ export class PermissionsService {
     // Fetch the target conversation
     const { data: conv, error } = await client
       .from('conversations')
-      .select('customer_id, trade_in_id')
+      .select('customer_id')
       .eq('id', conversationId)
       .single();
 
@@ -40,21 +40,15 @@ export class PermissionsService {
        const { data: profile } = await client.from('profiles').select('location_id').eq('id', userId).single();
        if (!profile?.location_id) return false;
 
-       // 1. Check Trade-In context
-       if (conv.trade_in_id) {
-         const { data: lead } = await client.from('trade_in_requests').select('branch_id').eq('id', conv.trade_in_id).single();
-         if (lead?.branch_id === profile.location_id) return true;
-       }
-
-       // 2. Check Vehicle context
+       // 1. Check Vehicle context
        const { data: convFull } = await client.from('conversations').select('vehicle_id').eq('id', conversationId).single();
        if (convFull?.vehicle_id) {
          const { data: vehicle } = await client.from('vehicles').select('branch_id').eq('id', convFull.vehicle_id).single();
          if (vehicle?.branch_id === profile.location_id || !vehicle?.branch_id) return true; // allow access to global leads (no branch)
        }
        
-       // 3. Fallback: If it's a global lead (no trade_in, no vehicle)
-       if (!conv.trade_in_id && !convFull?.vehicle_id) return true; 
+       // 2. Fallback: If it's a global lead (no vehicle)
+       if (!convFull?.vehicle_id) return true; 
     }
 
     return false;
