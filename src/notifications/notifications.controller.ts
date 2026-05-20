@@ -96,8 +96,20 @@ export class NotificationsController {
     if (!data.token) {
       return { success: false, message: 'Missing token' };
     }
-    const success = await this.fcmService.registerToken(req.user.id, data.token);
+    // Optional device info for debugging
+    const deviceInfo = (data as any).device || null;
+    this.logger.log(`Register FCM token for user ${req.user.id}: ${data.token.substring(0,10)}... device=${JSON.stringify(deviceInfo)}`);
+    const success = await this.fcmService.registerToken(req.user.id, data.token, deviceInfo);
     return { success };
+  }
+
+  @Get('tokens/:userId')
+  @Roles(Role.GENERAL_MANAGER)
+  async getTokens(@Param('userId') userId: string) {
+    const client = this.supabaseService.getClient();
+    const { data, error } = await client.from('profiles').select('id, full_name, fcm_token, last_seen_at').eq('id', userId).single();
+    if (error) return { success: false, message: error.message };
+    return { success: true, token: data?.fcm_token || null, profile: data };
   }
 
   @Post('test-push')

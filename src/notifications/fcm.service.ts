@@ -35,12 +35,14 @@ export class FCMService implements OnModuleInit {
   /**
    * Register a user's FCM device token in the database
    */
-  async registerToken(userId: string, token: string): Promise<boolean> {
+  async registerToken(userId: string, token: string, deviceInfo?: any): Promise<boolean> {
     try {
       const client = this.supabaseService.getClient();
+      const updatePayload: any = { fcm_token: token, last_seen_at: new Date().toISOString() };
+      if (deviceInfo) updatePayload.fcm_meta = deviceInfo;
       const { error } = await client
         .from('profiles')
-        .update({ fcm_token: token })
+        .update(updatePayload)
         .eq('id', userId);
 
       if (error) {
@@ -48,7 +50,7 @@ export class FCMService implements OnModuleInit {
         return false;
       }
 
-      this.logger.log(`FCM token successfully registered for user ${userId}`);
+      this.logger.log(`FCM token successfully registered for user ${userId} (${token.substring(0,12)}...)`);
       return true;
     } catch (e) {
       this.logger.error(`Exception registering FCM token: ${e.message}`);

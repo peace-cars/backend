@@ -4,6 +4,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './supabase/supabase.module';
+import { QueueModule } from './queues/queue.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { AuthModule } from './auth/auth.module';
 import { FinanceModule } from './finance/finance.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
@@ -38,6 +40,9 @@ import { TelegramModule } from './telegram/telegram.module';
       limit: 100, // 100 requests per minute
     }]),
     SupabaseModule,
+    // Background queue and realtime
+    QueueModule,
+    RealtimeModule,
     AuthModule,
     FinanceModule,
     VehiclesModule,

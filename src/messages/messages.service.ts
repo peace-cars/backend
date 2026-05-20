@@ -1,7 +1,8 @@
-import { Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, NotFoundException, Optional } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { Role } from '../auth/roles.enums';
 
 @Injectable()
@@ -11,7 +12,8 @@ export class MessagesService {
   constructor(
     private readonly supabaseService: SupabaseScopedService,
     private readonly permissions: PermissionsService,
-    private readonly notificationsService: NotificationsService
+    private readonly notificationsService: NotificationsService,
+    @Optional() private readonly realtime?: RealtimeGateway
   ) {}
 
   private isStaffRole(role: string): boolean {
@@ -187,7 +189,22 @@ export class MessagesService {
         .update({ last_message: data.text, updated_at: new Date().toISOString() })
         .eq('id', convId);
 
-      // 7. Check if this is a Telegram-sourced conversation → route reply through Telegram
+      // 7. Emit real-time update for conversation participants
+      if (convId) {
+        try {
+          this.realtime?.broadcastToRoom(`conv_${convId}`, 'message:new', {
+            conversationId: convId,
+            senderId,
+            senderName,
+            text: data.text,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (emitErr) {
+          this.logger.debug('Realtime emit failed', emitErr?.message || emitErr);
+        }
+      }
+
+      // 8. Check if this is a Telegram-sourced conversation → route reply through Telegram
       if (this.isStaffRole(userRole) && convId) {
         try {
           const { data: conv } = await supabase
@@ -197,14 +214,12 @@ export class MessagesService {
             .single();
 
           if (conv?.source === 'TELEGRAM' && conv?.telegram_chat_id) {
-            // Emit event for Telegram reply (handled by TelegramService if injected)
             this.logger.log(`Staff reply to Telegram conversation ${convId} → chat ${conv.telegram_chat_id}`);
-            // The TelegramService will pick this up via the notification system
           }
         } catch {}
       }
 
-      // 8. Trigger real-time notifications via FCM/Web
+      // 9. Trigger real-time notifications via FCM/Web
       if (convId) {
         await this.notificationsService.notifyNewMessage(
           convId,

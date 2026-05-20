@@ -1,11 +1,21 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { SupabaseService } from './supabase.service';
+import { QueueService } from '../queues/queue.service';
+// Optional: sharp is a native dependency; ensure it's installed in the environment
+let sharp: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  sharp = require('sharp');
+} catch (e) {
+  // If sharp isn't installed, we'll fallback to uploading the original buffer.
+}
 
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly supabaseService: SupabaseService,
+              @Optional() private readonly queueService?: QueueService) {}
 
   /**
    * Normalize MIME type based on file extension to bypass strict Supabase bucket validation.
@@ -54,12 +64,68 @@ export class StorageService {
 
     this.logger.debug(`Uploading: ${filePath} (${mimeType}, ${(file.size / 1024).toFixed(1)}KB)`);
 
+    // If this is an image and sharp is available, generate optimized variants
+    const isImage = mimeType.startsWith('image/') && sharp;
+    let mainBuffer: Buffer = file.buffer;
+
+    if (isImage) {
+      try {
+        const baseName = fileName.replace(/\.[^.]+$/, '');
+        const originalBase64 = file.buffer.toString('base64');
+
+        if (this.queueService) {
+          // Upload original first and process image variants asynchronously
+          await this.queueService.addJob('process-image', {
+            bucket,
+            folder,
+            baseName,
+            originalExt: fileExt,
+            originalBase64,
+          });
+          this.logger.log('Enqueued process-image job for background optimization');
+        } else {
+          const optimized = await sharp(file.buffer)
+            .rotate()
+            .resize({ width: 1600, withoutEnlargement: true })
+            .toFormat('webp', { quality: 80 })
+            .toBuffer();
+
+          const thumb = await sharp(file.buffer)
+            .rotate()
+            .resize({ width: 400, withoutEnlargement: true })
+            .toFormat('webp', { quality: 75 })
+            .toBuffer();
+
+          const thumbName = `${baseName}-thumb.webp`;
+          const thumbPath = `${folder}/${thumbName}`;
+          const { error: thumbErr } = await this.supabaseService.getClient().storage
+            .from(bucket)
+            .upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true });
+          if (thumbErr) this.logger.warn(`Thumbnail upload failed: ${thumbErr.message}`);
+
+          const webpName = `${baseName}.webp`;
+          const webpPath = `${folder}/${webpName}`;
+          const { data: webpData, error: webpErr } = await this.supabaseService.getClient().storage
+            .from(bucket)
+            .upload(webpPath, optimized, { contentType: 'image/webp', upsert: true });
+          if (!webpErr) {
+            const { data: { publicUrl } } = this.supabaseService.getClient().storage.from(bucket).getPublicUrl(webpPath);
+            this.logger.log(`Optimized upload successful: ${publicUrl}`);
+            return publicUrl;
+          }
+          this.logger.warn(`Optimized upload failed, falling back to original: ${webpErr?.message}`);
+        }
+      } catch (err) {
+        this.logger.warn('Image optimization failed, uploading original.', err?.message || err);
+      }
+    }
+
     // Retry up to 2 times for transient errors
     let lastError: any = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       const { data, error } = await client.storage
         .from(bucket)
-        .upload(filePath, file.buffer, {
+        .upload(filePath, mainBuffer, {
           contentType: mimeType,
           upsert: true,
         });
@@ -106,6 +172,59 @@ export class StorageService {
     const mimeType = this.normalizeMimeType('image/jpeg', fileExt);
 
     this.logger.debug(`Base64 uploading: ${filePath} (${mimeType}, ${(buffer.length / 1024).toFixed(1)}KB)`);
+
+    // If sharp available and image, create optimized variants (webp) and thumbnail
+    const isImage = mimeType.startsWith('image/') && sharp;
+    if (isImage && sharp) {
+      const baseName = fileName.replace(/\.[^.]+$/, '');
+      const originalBase64 = base64Clean;
+      try {
+        if (this.queueService) {
+          await this.queueService.addJob('process-image', {
+            bucket,
+            folder,
+            baseName,
+            originalExt: fileExt,
+            originalBase64,
+          });
+          this.logger.log('Enqueued process-image job for base64 optimization');
+        } else {
+          const optimized = await sharp(buffer)
+            .rotate()
+            .resize({ width: 1600, withoutEnlargement: true })
+            .toFormat('webp', { quality: 80 })
+            .toBuffer();
+
+          const thumb = await sharp(buffer)
+            .rotate()
+            .resize({ width: 400, withoutEnlargement: true })
+            .toFormat('webp', { quality: 75 })
+            .toBuffer();
+
+          const webpName = `${baseName}.webp`;
+          const webpPath = `${folder}/${webpName}`;
+
+          const { data: webpData, error: webpErr } = await client.storage
+            .from(bucket)
+            .upload(webpPath, optimized, { contentType: 'image/webp', upsert: true });
+
+          if (webpErr) {
+            this.logger.warn(`Optimized webp upload failed: ${webpErr.message}`);
+          } else {
+            const thumbName = `${baseName}-thumb.webp`;
+            const thumbPath = `${folder}/${thumbName}`;
+            const { error: thumbErr } = await client.storage.from(bucket).upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true });
+            if (thumbErr) this.logger.warn(`Thumbnail upload failed: ${thumbErr.message}`);
+
+            const { data: { publicUrl } } = client.storage.from(bucket).getPublicUrl(webpPath);
+            this.logger.log(`Base64 optimized upload successful: ${publicUrl}`);
+            return publicUrl;
+          }
+        }
+      } catch (err) {
+        this.logger.warn('Image optimization failed for base64 upload, falling back to original.', err?.message || err);
+      }
+    }
 
     const { data, error } = await client.storage
       .from(bucket)

@@ -21,6 +21,8 @@ async function bootstrap() {
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
+    // Allow primitive type conversion (e.g. "123" -> number)
+    transformOptions: { enableImplicitConversion: true } as any,
   }));
 
   // Global Exception Filter to sanitize errors

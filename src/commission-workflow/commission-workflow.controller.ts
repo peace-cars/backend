@@ -120,4 +120,49 @@ export class CommissionWorkflowController {
     this.logger.log(`Commission ${id} settled by ${req.user.role} (${req.user.id})`);
     return { success: true };
   }
+
+  @Get(':id')
+  @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
+  async getById(@Param('id') id: string, @Req() req: any) {
+    const client = this.supabaseService.getClient();
+
+    const { data: commission, error: cErr } = await client
+      .from('commissions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (cErr) throw new Error(cErr.message);
+    if (!commission) return { success: false, message: 'Not found' };
+
+    // If commission references a vehicle, fetch vehicle details
+    let vehicle = null;
+    if (commission.vehicle_id) {
+      const { data: v, error: vErr } = await client
+        .from('vehicles')
+        .select('id, make, model, year, retail_price_etb, images, status')
+        .eq('id', commission.vehicle_id)
+        .single();
+      if (!vErr) vehicle = v;
+    }
+
+    // Try to fetch latest inspection report for the vehicle (best-effort)
+    let inspection = null;
+    if (vehicle) {
+      const { data: ins, error: iErr } = await client
+        .from('inspections')
+        .select('*')
+        .eq('vehicle_id', vehicle.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (!iErr) inspection = ins;
+    }
+
+    return {
+      commission,
+      vehicle,
+      inspection,
+    };
+  }
 }

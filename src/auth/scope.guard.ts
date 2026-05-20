@@ -51,14 +51,14 @@ export class ScopeGuard implements CanActivate {
       }
 
       // If the request targets a specific branch, ensure it's within the DM's district
-      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId;
+      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.id || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
       if (targetBranchId && !scopedBranchIds.includes(targetBranchId)) {
         this.logger.warn(`[SCOPE DENIED] DM ${user.id} tried to access branch ${targetBranchId} outside district ${user.districtId}`);
         throw new ForbiddenException('Action outside of assigned district scope.');
       }
 
       // If the request targets a specific district, ensure it matches
-      const targetDistrictId = body?.district_id || body?.districtId;
+      const targetDistrictId = body?.district_id || body?.districtId || request.params?.districtId || request.query?.districtId;
       if (targetDistrictId && targetDistrictId !== user.districtId) {
         this.logger.warn(`[SCOPE DENIED] DM ${user.id} tried to access district ${targetDistrictId}, assigned to ${user.districtId}`);
         throw new ForbiddenException('Action outside of assigned district scope.');
@@ -73,7 +73,7 @@ export class ScopeGuard implements CanActivate {
       }
 
       // Staff can only operate within their own branch
-      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId;
+      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.id || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
       if (targetBranchId && targetBranchId !== user.branchId) {
         this.logger.warn(`[SCOPE DENIED] Staff ${user.id} tried to access branch ${targetBranchId}, assigned to ${user.branchId}`);
         throw new ForbiddenException('Action outside of assigned branch scope.');

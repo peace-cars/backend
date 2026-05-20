@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const TelegramBot = require('node-telegram-bot-api');
@@ -19,6 +20,7 @@ export class TelegramService implements OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     private readonly supabase: SupabaseService,
+    private readonly realtime?: RealtimeGateway,
   ) {}
 
   onModuleInit() {
@@ -27,8 +29,28 @@ export class TelegramService implements OnModuleInit {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set — Telegram bot is DISABLED.');
       return;
     }
+    // Decide mode: 'polling' or 'webhook'. Default to 'polling' in development
+    const mode = this.config.get<string>('TELEGRAM_MODE') || (process.env.NODE_ENV === 'production' ? 'webhook' : 'polling');
 
-    this.bot = new TelegramBot(token, { polling: true });
+    if (mode === 'polling') {
+      this.bot = new TelegramBot(token, { polling: true });
+      this.logger.log('Starting Telegram bot in polling mode.');
+    } else if (mode === 'webhook') {
+      const webhookUrl = this.config.get<string>('TELEGRAM_WEBHOOK_URL');
+      if (!webhookUrl) {
+        this.logger.warn('TELEGRAM_WEBHOOK_URL not set — Telegram webhook not configured, bot disabled.');
+        return;
+      }
+      this.bot = new TelegramBot(token);
+      this.bot.setWebHook(webhookUrl).then(() => {
+        this.logger.log('Telegram webhook configured.');
+      }).catch((err: any) => {
+        this.logger.error('Failed to set Telegram webhook', err);
+      });
+    } else {
+      this.logger.warn(`Unknown TELEGRAM_MODE='${mode}' — Telegram bot disabled.`);
+      return;
+    }
     
     // Add error handling to prevent crashes on network timeouts
     this.bot.on('polling_error', (error: any) => {
@@ -39,7 +61,7 @@ export class TelegramService implements OnModuleInit {
       this.logger.error(`🤖 Telegram General Error: ${error.message}`);
     });
 
-    this.logger.log('🤖 PeaceCars Telegram Bot started (polling).');
+    this.logger.log('🤖 PeaceCars Telegram Bot started.');
 
     this.registerHandlers();
   }
@@ -646,6 +668,18 @@ export class TelegramService implements OnModuleInit {
       source: 'TELEGRAM',
       telegram_chat_id: chatId.toString(),
     });
+
+    // Emit realtime event for UI listeners
+    try {
+      this.realtime?.broadcastToRoom(`conv_${conversationId}`, 'message:new', {
+        conversationId,
+        text: msg.text,
+        sender: this.getTelegramName(msg),
+        source: 'TELEGRAM',
+      });
+    } catch (e) {
+      this.logger.debug('Realtime emit failed', e?.message || e);
+    }
 
     await client
       .from('conversations')

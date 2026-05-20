@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { FCMService } from './fcm.service';
+import { QueueService } from '../queues/queue.service';
 
 export type NotificationType = 
   | 'NEW_MESSAGE' 
@@ -18,6 +19,7 @@ export class NotificationsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly fcmService: FCMService,
+    private readonly queueService: QueueService,
   ) {}
 
   /**
@@ -57,14 +59,23 @@ export class NotificationsService {
         return null;
       }
 
-      // 2. Dispatch FCM push notification (non-blocking)
-      this.fcmService.sendPushNotification(recipientId, title, body, {
-        type,
-        referenceId: referenceId || '',
-        actionUrl: actionUrl || '',
-      }).catch(err => {
-        this.logger.warn(`FCM push failed for ${recipientId}: ${err.message}`);
-      });
+      // 2. Dispatch FCM push notification (non-blocking) via background queue when available
+      if (this.queueService) {
+        await this.queueService.addJob('send-notification', {
+          recipientId,
+          title,
+          body,
+          meta: { type, referenceId, actionUrl }
+        });
+      } else {
+        this.fcmService.sendPushNotification(recipientId, title, body, {
+          type,
+          referenceId: referenceId || '',
+          actionUrl: actionUrl || '',
+        }).catch(err => {
+          this.logger.warn(`FCM push failed for ${recipientId}: ${err.message}`);
+        });
+      }
 
       return notification;
     } catch (err) {

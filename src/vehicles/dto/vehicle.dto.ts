@@ -1,4 +1,5 @@
 import { IsString, IsNumber, IsOptional, IsArray, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateVehicleDto {
   @IsString()
@@ -8,9 +9,11 @@ export class CreateVehicleDto {
   model: string;
 
   @IsNumber()
+  @Type(() => Number)
   year: number;
 
   @IsNumber()
+  @Type(() => Number)
   retail_price_etb: number;
 
   @IsString()
@@ -21,6 +24,7 @@ export class CreateVehicleDto {
 
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   battery_soh_percent?: number;
 
   @IsOptional()
@@ -40,6 +44,7 @@ export class CreateVehicleDto {
 
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   certified_km?: number;
 
   @IsOptional()
@@ -47,17 +52,27 @@ export class CreateVehicleDto {
   @IsString({ each: true })
   images?: string[];
 
-  @IsOptional() @IsNumber() range_km?: number;
-  @IsOptional() @IsNumber() motor_power_kw?: number;
+  @IsOptional() @IsNumber() 
+  @Type(() => Number)
+  range_km?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  motor_power_kw?: number;
   @IsOptional() @IsString() drive_train?: string;
   @IsOptional() @IsString() interior_color?: string;
-  @IsOptional() @IsNumber() battery_capacity_kwh?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  battery_capacity_kwh?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) features?: string[];
   @IsOptional() @IsString() software_language?: string;
   @IsOptional() @IsString() charger?: string;
   @IsOptional() @IsString() branch_id?: string;
-  @IsOptional() @IsNumber() unit_cost?: number;
-  @IsOptional() @IsNumber() floor_plan_loan?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  unit_cost?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  floor_plan_loan?: number;
   @IsOptional() @IsString() maturity_date?: string;
   @IsOptional() @IsString() sold_date?: string;
 }
@@ -115,17 +130,27 @@ export class UpdateVehicleDto {
   @IsString({ each: true })
   images?: string[];
 
-  @IsOptional() @IsNumber() range_km?: number;
-  @IsOptional() @IsNumber() motor_power_kw?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  range_km?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  motor_power_kw?: number;
   @IsOptional() @IsString() drive_train?: string;
   @IsOptional() @IsString() interior_color?: string;
-  @IsOptional() @IsNumber() battery_capacity_kwh?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  battery_capacity_kwh?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) features?: string[];
   @IsOptional() @IsString() software_language?: string;
   @IsOptional() @IsString() charger?: string;
   @IsOptional() @IsString() branch_id?: string;
-  @IsOptional() @IsNumber() unit_cost?: number;
-  @IsOptional() @IsNumber() floor_plan_loan?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  unit_cost?: number;
+  @IsOptional() @IsNumber()
+  @Type(() => Number)
+  floor_plan_loan?: number;
   @IsOptional() @IsString() maturity_date?: string;
   @IsOptional() @IsString() sold_date?: string;
 }
