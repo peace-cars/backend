@@ -14,6 +14,8 @@ export class TelegramController {
   @Post('webhook')
   async handleWebhook(@Body() update: any, @Headers('x-telegram-bot-api-secret-token') secretHeader?: string) {
     const secret = this.config.get<string>('TELEGRAM_WEBHOOK_SECRET');
+    this.logger.log(`Telegram webhook hit. secretHeader=${secretHeader ? 'present' : 'missing'} payloadType=${update?.update_id ? 'telegram' : 'unknown'}`);
+
     if (secret) {
       if (!secretHeader || secretHeader !== secret) {
         this.logger.warn('Telegram webhook rejected due to invalid secret header');
