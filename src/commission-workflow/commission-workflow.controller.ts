@@ -4,6 +4,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
+import { LedgerService } from '../finance/ledger.service';
 
 /**
  * Commission Workflow Controller
@@ -27,7 +28,10 @@ import { Role } from '../auth/roles.enums';
 export class CommissionWorkflowController {
   private readonly logger = new Logger(CommissionWorkflowController.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly ledgerService: LedgerService,
+  ) {}
 
   @Get()
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
@@ -97,7 +101,7 @@ export class CommissionWorkflowController {
     // Ensure DM verification happened first (two-step enforcement)
     const { data: commission } = await client
       .from('commissions')
-      .select('dm_verified')
+      .select('dm_verified, amount_etb, type, beneficiary_id')
       .eq('id', id)
       .single();
 
@@ -116,6 +120,22 @@ export class CommissionWorkflowController {
       .eq('id', id);
     
     if (error) return { success: false, message: error.message };
+
+    // Post to Double-Entry Ledger
+    try {
+      await this.ledgerService.postTransaction(
+        `Disbursement of commission payout for record ${id} (Type: ${commission.type})`,
+        'COMMISSION_PAID',
+        id,
+        [
+          { accountName: 'Commission Expense', type: 'DEBIT', amount: commission.amount_etb },
+          { accountName: 'Operational Cash', type: 'CREDIT', amount: commission.amount_etb }
+        ],
+        req.user.id
+      );
+    } catch (ledgErr) {
+      this.logger.error(`Ledger record posting failed for commission approval ${id}: ${ledgErr.message}`);
+    }
 
     this.logger.log(`Commission ${id} settled by ${req.user.role} (${req.user.id})`);
     return { success: true };

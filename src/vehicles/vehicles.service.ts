@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { FsmService } from '../common/fsm.service';
 
 @Injectable()
 export class VehiclesService {
@@ -8,7 +9,8 @@ export class VehiclesService {
 
   constructor(
     private supabaseScoped: SupabaseScopedService,
-    private supabaseAdmin: SupabaseService
+    private supabaseAdmin: SupabaseService,
+    private fsmService: FsmService,
   ) {}
 
   async getShowroom() {
@@ -160,6 +162,48 @@ export class VehiclesService {
   async update(id: string, data: any) {
     try {
       const client = this.supabaseScoped.getClient();
+
+      // 1. Fetch current status and VIN of the vehicle to enforce FSM transition validation
+      const { data: existing, error: fetchErr } = await client
+        .from('vehicles')
+        .select('status, vin_chassis')
+        .eq('id', id)
+        .single();
+      
+      if (fetchErr || !existing) {
+        throw new NotFoundException(`Vehicle ${id} not found or inaccessible.`);
+      }
+
+      // 2. Validate FSM State Transition
+      if (data.status && data.status !== existing.status) {
+        this.fsmService.validateVehicleTransition(existing.status, data.status);
+
+        // Rule: A vehicle cannot be transitioned to SHOWROOM without a certified inspection report
+        if (data.status === 'SHOWROOM') {
+          // Query inspections table directly
+          const { data: inspections } = await client
+            .from('inspections')
+            .select('is_certified')
+            .eq('vehicle_id', id);
+          
+          let isInspected = inspections?.some(i => i.is_certified) || false;
+
+          // If no direct link, try matching via trade_in_requests ID referenced in vin_chassis
+          if (!isInspected && existing.vin_chassis?.startsWith('TRAD-')) {
+            const leadId = existing.vin_chassis.substring(5);
+            const { data: leadInspections } = await client
+              .from('inspections')
+              .select('is_certified')
+              .eq('trade_in_id', leadId);
+            isInspected = leadInspections?.some(i => i.is_certified) || false;
+          }
+
+          if (!isInspected) {
+            throw new BadRequestException('FSM Policy Violation: A vehicle cannot be listed under SHOWROOM status without a certified inspection report.');
+          }
+        }
+      }
+
       const payload: Record<string, any> = {
         make: data.make,
         model: data.model,

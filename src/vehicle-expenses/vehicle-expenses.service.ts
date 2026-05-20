@@ -1,11 +1,15 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { LedgerService } from '../finance/ledger.service';
 
 @Injectable()
 export class VehicleExpensesService {
   private readonly logger = new Logger(VehicleExpensesService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly ledgerService: LedgerService,
+  ) {}
 
   async createExpense(vehicleId: string, data: { amount: number; purpose: string; category?: string; staffId?: string }) {
     try {
@@ -26,6 +30,23 @@ export class VehicleExpensesService {
         .single();
       
       if (expError) throw expError;
+
+      // Post to Double-Entry Financial Ledger
+      try {
+        await this.ledgerService.postTransaction(
+          `Vehicle Expense - Renovation of Vehicle ${vehicleId} (${data.purpose})`,
+          'VEHICLE_EXPENSE',
+          expense.id,
+          [
+            { accountName: 'Vehicle Repair Expense', type: 'DEBIT', amount: data.amount },
+            { accountName: 'Operational Cash', type: 'CREDIT', amount: data.amount }
+          ],
+          data.staffId
+        );
+      } catch (ledgErr) {
+        this.logger.error(`Failed to post vehicle expense ledger transaction: ${ledgErr.message}`);
+        // We log but don't crash standard operations, or we could bubble up if we want hard assertions.
+      }
 
       // 2. Refetch All Expenses for this vehicle to calculate total landed cost
       const { data: allExpenses } = await supabase
