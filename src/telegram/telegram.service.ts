@@ -172,57 +172,59 @@ export class TelegramService implements OnModuleInit {
       if (!query.data) return;
       const chatId = query.message!.chat.id;
 
+      const acknowledge = async () => {
+        if (!query.id) return;
+        try {
+          await this.bot.answerCallbackQuery(query.id);
+        } catch (err: any) {
+          this.logger.warn(`Callback query ack failed: ${err?.message || err}`);
+        }
+      };
+
+      await acknowledge();
+
       if (query.data.startsWith('inquire_')) {
         const vehicleId = query.data.replace('inquire_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleVehicleInquiry(chatId, vehicleId, query.message);
       }
 
       if (query.data === 'browse_all') {
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleBrowse(chatId);
       }
 
       if (query.data.startsWith('buy_now_')) {
         const vehicleId = query.data.replace('buy_now_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleBuyCommand(chatId, vehicleId);
       }
 
       if (query.data.startsWith('pay_')) {
         const method = query.data.replace('pay_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handlePaymentMethodSelection(chatId, method);
       }
 
       // ── Quiz Callbacks ──
       if (query.data.startsWith('quiz_use_')) {
         const use = query.data.replace('quiz_use_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleQuizUse(chatId, use);
       }
       if (query.data.startsWith('quiz_budget_')) {
         const budget = query.data.replace('quiz_budget_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleQuizBudget(chatId, budget);
       }
       if (query.data.startsWith('quiz_engine_')) {
         const engine = query.data.replace('quiz_engine_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleQuizEngine(chatId, engine);
       }
 
       // ── Duty Callbacks ──
       if (query.data.startsWith('duty_type_')) {
         const type = query.data.replace('duty_type_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleDutyType(chatId, type);
       }
 
       // ── Subscribe Callbacks ──
       if (query.data.startsWith('sub_filter_')) {
         const filter = query.data.replace('sub_filter_', '');
-        await this.bot.answerCallbackQuery(query.id);
         await this.handleSubscribeFilter(chatId, filter);
       }
     });
