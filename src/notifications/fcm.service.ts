@@ -46,6 +46,25 @@ export class FCMService implements OnModuleInit {
         .eq('id', userId);
 
       if (error) {
+        const msg = (error?.message || '').toLowerCase();
+
+        // Handle missing fcm_meta column gracefully by retrying without the metadata
+        if (deviceInfo && (msg.includes('fcm_meta') || msg.includes("could not find the 'fcm_meta'") || (msg.includes('column') && msg.includes('fcm_meta')))) {
+          this.logger.warn(`Profiles table appears to be missing 'fcm_meta'. Retrying token registration without metadata for user ${userId}`);
+          const { error: retryErr } = await client
+            .from('profiles')
+            .update({ fcm_token: token, last_seen_at: new Date().toISOString() })
+            .eq('id', userId);
+
+          if (retryErr) {
+            this.logger.error(`Failed to register FCM token (retry) for user ${userId}: ${retryErr.message}`);
+            return false;
+          }
+
+          this.logger.log(`FCM token successfully registered for user ${userId} (metadata skipped)`);
+          return true;
+        }
+
         this.logger.error(`Failed to register FCM token for user ${userId}: ${error.message}`);
         return false;
       }
