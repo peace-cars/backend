@@ -56,6 +56,10 @@ export class CreateVehicleDto {
   @IsOptional() @IsString() software_language?: string;
   @IsOptional() @IsString() charger?: string;
   @IsOptional() @IsString() branch_id?: string;
+  @IsOptional() @IsNumber() unit_cost?: number;
+  @IsOptional() @IsNumber() floor_plan_loan?: number;
+  @IsOptional() @IsString() maturity_date?: string;
+  @IsOptional() @IsString() sold_date?: string;
 }
 
 export class UpdateVehicleDto {
@@ -120,4 +124,8 @@ export class UpdateVehicleDto {
   @IsOptional() @IsString() software_language?: string;
   @IsOptional() @IsString() charger?: string;
   @IsOptional() @IsString() branch_id?: string;
+  @IsOptional() @IsNumber() unit_cost?: number;
+  @IsOptional() @IsNumber() floor_plan_loan?: number;
+  @IsOptional() @IsString() maturity_date?: string;
+  @IsOptional() @IsString() sold_date?: string;
 }
