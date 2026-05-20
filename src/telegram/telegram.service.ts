@@ -12,6 +12,17 @@ const BUY_STEPS = {
   ASK_NOTES: 'BUY_ASK_NOTES',
 };
 
+const QUIZ_STEPS = {
+  ASK_USE: 'QUIZ_ASK_USE',
+  ASK_BUDGET: 'QUIZ_ASK_BUDGET',
+  ASK_ENGINE: 'QUIZ_ASK_ENGINE',
+};
+
+const DUTY_STEPS = {
+  ASK_TYPE: 'DUTY_ASK_TYPE',
+  ASK_FOB: 'DUTY_ASK_FOB',
+};
+
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private bot: any = null;
@@ -37,12 +48,17 @@ export class TelegramService implements OnModuleInit {
       this.logger.log('Starting Telegram bot in polling mode.');
     } else if (mode === 'webhook') {
       const webhookUrl = this.config.get<string>('TELEGRAM_WEBHOOK_URL');
+      const webhookSecret = this.config.get<string>('TELEGRAM_WEBHOOK_SECRET');
       if (!webhookUrl) {
         this.logger.warn('TELEGRAM_WEBHOOK_URL not set — Telegram webhook not configured, bot disabled.');
         return;
       }
       this.bot = new TelegramBot(token);
-      this.bot.setWebHook(webhookUrl).then(() => {
+      const webhookOptions: any = {};
+      if (webhookSecret) {
+        webhookOptions.secret_token = webhookSecret;
+      }
+      this.bot.setWebHook(webhookUrl, webhookOptions).then(() => {
         this.logger.log('Telegram webhook configured.');
       }).catch((err: any) => {
         this.logger.error('Failed to set Telegram webhook', err);
@@ -64,6 +80,22 @@ export class TelegramService implements OnModuleInit {
     this.logger.log('🤖 PeaceCars Telegram Bot started.');
 
     this.registerHandlers();
+  }
+
+  /**
+   * Process a Telegram Update object (used by webhook receiver).
+   */
+  public async processUpdate(update: any) {
+    if (!this.bot || typeof this.bot.processUpdate !== 'function') {
+      this.logger.warn('Received Telegram update but bot instance not available to process it.');
+      return;
+    }
+
+    try {
+      await this.bot.processUpdate(update);
+    } catch (err) {
+      this.logger.error('Failed to process Telegram update via bot.processUpdate', err);
+    }
   }
 
   // ─── Command Handlers ──────────────────────────────────────────────
@@ -89,6 +121,26 @@ export class TelegramService implements OnModuleInit {
     // /buy command
     this.bot.onText(/\/buy/, async (msg: any) => {
       await this.handleBuyCommand(msg.chat.id);
+    });
+
+    // /quiz command — Lifestyle Car Finder
+    this.bot.onText(/\/quiz/, async (msg: any) => {
+      await this.handleQuizStart(msg.chat.id);
+    });
+
+    // /duty command — Customs Duty Estimator
+    this.bot.onText(/\/duty/, async (msg: any) => {
+      await this.handleDutyStart(msg.chat.id);
+    });
+
+    // /subscribe command — Smart Alerts
+    this.bot.onText(/\/subscribe/, async (msg: any) => {
+      await this.handleSubscribeStart(msg.chat.id);
+    });
+
+    // /unsubscribe command — Remove Alerts
+    this.bot.onText(/\/unsubscribe/, async (msg: any) => {
+      await this.handleUnsubscribe(msg.chat.id);
     });
 
     // Any free-text message (not a command) → route to sales or handle form
@@ -118,28 +170,60 @@ export class TelegramService implements OnModuleInit {
     // Callback queries for inline buttons
     this.bot.on('callback_query', async (query: any) => {
       if (!query.data) return;
+      const chatId = query.message!.chat.id;
 
       if (query.data.startsWith('inquire_')) {
         const vehicleId = query.data.replace('inquire_', '');
         await this.bot.answerCallbackQuery(query.id);
-        await this.handleVehicleInquiry(query.message!.chat.id, vehicleId, query.message);
+        await this.handleVehicleInquiry(chatId, vehicleId, query.message);
       }
 
       if (query.data === 'browse_all') {
         await this.bot.answerCallbackQuery(query.id);
-        await this.handleBrowse(query.message!.chat.id);
+        await this.handleBrowse(chatId);
       }
 
       if (query.data.startsWith('buy_now_')) {
         const vehicleId = query.data.replace('buy_now_', '');
         await this.bot.answerCallbackQuery(query.id);
-        await this.handleBuyCommand(query.message!.chat.id, vehicleId);
+        await this.handleBuyCommand(chatId, vehicleId);
       }
 
       if (query.data.startsWith('pay_')) {
         const method = query.data.replace('pay_', '');
         await this.bot.answerCallbackQuery(query.id);
-        await this.handlePaymentMethodSelection(query.message!.chat.id, method);
+        await this.handlePaymentMethodSelection(chatId, method);
+      }
+
+      // ── Quiz Callbacks ──
+      if (query.data.startsWith('quiz_use_')) {
+        const use = query.data.replace('quiz_use_', '');
+        await this.bot.answerCallbackQuery(query.id);
+        await this.handleQuizUse(chatId, use);
+      }
+      if (query.data.startsWith('quiz_budget_')) {
+        const budget = query.data.replace('quiz_budget_', '');
+        await this.bot.answerCallbackQuery(query.id);
+        await this.handleQuizBudget(chatId, budget);
+      }
+      if (query.data.startsWith('quiz_engine_')) {
+        const engine = query.data.replace('quiz_engine_', '');
+        await this.bot.answerCallbackQuery(query.id);
+        await this.handleQuizEngine(chatId, engine);
+      }
+
+      // ── Duty Callbacks ──
+      if (query.data.startsWith('duty_type_')) {
+        const type = query.data.replace('duty_type_', '');
+        await this.bot.answerCallbackQuery(query.id);
+        await this.handleDutyType(chatId, type);
+      }
+
+      // ── Subscribe Callbacks ──
+      if (query.data.startsWith('sub_filter_')) {
+        const filter = query.data.replace('sub_filter_', '');
+        await this.bot.answerCallbackQuery(query.id);
+        await this.handleSubscribeFilter(chatId, filter);
       }
     });
   }
@@ -562,6 +646,12 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
+    // Check if in the middle of a Duty Flow (waiting for FOB value)
+    if (session?.current_step === DUTY_STEPS.ASK_FOB) {
+      await this.handleDutyFobInput(chatId, msg.text);
+      return;
+    }
+
     const vehicleId = session?.vehicle_id || null;
 
     // 1. Save message to conversations/messages tables (web portal)
@@ -816,10 +906,11 @@ export class TelegramService implements OnModuleInit {
       ``,
       `Here's what I can help you with:`,
       `• /browse — See our latest collection`,
-      `• /search [keyword] — Search by make, model, or fuel type`,
+      `• /search \[keyword\] — Search by make, model, or fuel type`,
+      `• /quiz — 🧠 Find your perfect car in 30 seconds`,
+      `• /duty — 🧮 Estimate import customs duty`,
+      `• /subscribe — 🔔 Get alerts for new showroom arrivals`,
       `• /buy — Start a purchase for the last car you viewed`,
-      `• Get instant vehicle details & pricing`,
-      `• Connect you with our sales specialists`,
       ``,
       `🌐 Visit our showroom: peacecars.com/inventory`,
       ``,
@@ -835,6 +926,7 @@ export class TelegramService implements OnModuleInit {
         reply_markup: {
           inline_keyboard: [
             [{ text: '🛒 Browse Collection', callback_data: 'browse_all' }],
+            [{ text: '🧠 Take the Quiz', callback_data: 'quiz_use_START' }],
           ],
         },
       });
@@ -864,5 +956,527 @@ export class TelegramService implements OnModuleInit {
     } catch (err) {
       this.logger.error(`Failed to send reply to Telegram chat ${telegramChatId}`, err);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ─── FEATURE 1: Interactive Lifestyle Quiz (/quiz) ────────────────
+  // ═══════════════════════════════════════════════════════════════════
+
+  private async handleQuizStart(chatId: number) {
+    const client = this.supabase.getClient();
+    await client.from('telegram_sessions').upsert({
+      telegram_chat_id: chatId.toString(),
+      current_step: QUIZ_STEPS.ASK_USE,
+      form_data: {},
+    }, { onConflict: 'telegram_chat_id' });
+
+    try {
+      await this.bot.sendMessage(chatId, '🧠 *PeaceCars Lifestyle Quiz*\n\nLet me find the perfect car for your lifestyle in Ethiopia! Answer 3 quick questions.\n\n*Q1/3: What will you primarily use this vehicle for?*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🏙️ Daily Commute', callback_data: 'quiz_use_COMMUTE' }],
+            [{ text: '👨‍👩‍👧‍👦 Family / SUV', callback_data: 'quiz_use_FAMILY' }],
+            [{ text: '🏔️ Offroad / Rough Roads', callback_data: 'quiz_use_OFFROAD' }],
+            [{ text: '🚕 Business / Taxi', callback_data: 'quiz_use_BUSINESS' }],
+          ],
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to start quiz for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleQuizUse(chatId: number, use: string) {
+    // If user clicked the welcome button, start from scratch
+    if (use === 'START') {
+      await this.handleQuizStart(chatId);
+      return;
+    }
+
+    const client = this.supabase.getClient();
+    await client.from('telegram_sessions').update({
+      current_step: QUIZ_STEPS.ASK_BUDGET,
+      form_data: { use },
+    }).eq('telegram_chat_id', chatId.toString());
+
+    try {
+      await this.bot.sendMessage(chatId, '💰 *Q2/3: What is your budget range?*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '💵 Under 3M ETB', callback_data: 'quiz_budget_LOW' }],
+            [{ text: '💳 3M – 6M ETB', callback_data: 'quiz_budget_MID' }],
+            [{ text: '💎 6M – 10M ETB', callback_data: 'quiz_budget_HIGH' }],
+            [{ text: '👑 10M+ ETB', callback_data: 'quiz_budget_PREMIUM' }],
+          ],
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send quiz Q2 for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleQuizBudget(chatId: number, budget: string) {
+    const client = this.supabase.getClient();
+    const { data: session } = await client
+      .from('telegram_sessions')
+      .select('form_data')
+      .eq('telegram_chat_id', chatId.toString())
+      .single();
+
+    await client.from('telegram_sessions').update({
+      current_step: QUIZ_STEPS.ASK_ENGINE,
+      form_data: { ...(session?.form_data || {}), budget },
+    }).eq('telegram_chat_id', chatId.toString());
+
+    try {
+      await this.bot.sendMessage(chatId, '⛽ *Q3/3: Engine / powertrain preference?*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '⚡ Electric (EV)', callback_data: 'quiz_engine_EV' }],
+            [{ text: '🔋 Hybrid / PHEV', callback_data: 'quiz_engine_HYBRID' }],
+            [{ text: '⛽ Petrol / Diesel', callback_data: 'quiz_engine_ICE' }],
+            [{ text: '🤷 No Preference', callback_data: 'quiz_engine_ANY' }],
+          ],
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send quiz Q3 for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleQuizEngine(chatId: number, engine: string) {
+    const client = this.supabase.getClient();
+    const { data: session } = await client
+      .from('telegram_sessions')
+      .select('form_data')
+      .eq('telegram_chat_id', chatId.toString())
+      .single();
+
+    const formData = { ...(session?.form_data || {}), engine };
+
+    // Clear session step
+    await client.from('telegram_sessions').update({
+      current_step: null,
+      form_data: {},
+    }).eq('telegram_chat_id', chatId.toString());
+
+    // Build dynamic query based on quiz answers
+    let query = client
+      .from('vehicles')
+      .select('id, make, model, year, retail_price_etb, fuel, images, drive_train')
+      .eq('status', 'SHOWROOM');
+
+    // Budget filter
+    const budgetRanges: Record<string, [number, number]> = {
+      LOW: [0, 3_000_000],
+      MID: [3_000_000, 6_000_000],
+      HIGH: [6_000_000, 10_000_000],
+      PREMIUM: [10_000_000, 999_999_999],
+    };
+    const [minPrice, maxPrice] = budgetRanges[formData.budget] || [0, 999_999_999];
+    query = query.gte('retail_price_etb', minPrice).lte('retail_price_etb', maxPrice);
+
+    // Engine filter
+    if (formData.engine && formData.engine !== 'ANY') {
+      const fuelMap: Record<string, string[]> = {
+        EV: ['EV', 'ELECTRIC'],
+        HYBRID: ['HYBRID', 'PHEV'],
+        ICE: ['PETROL', 'DIESEL'],
+      };
+      const fuels = fuelMap[formData.engine] || [];
+      if (fuels.length > 0) {
+        query = query.in('fuel', fuels);
+      }
+    }
+
+    const { data: vehicles, error } = await query
+      .order('retail_price_etb', { ascending: true })
+      .limit(5);
+
+    if (error) {
+      this.logger.error(`Quiz query error: ${error.message}`);
+      await this.bot.sendMessage(chatId, '❌ Sorry, an error occurred while searching. Please try /quiz again.');
+      return;
+    }
+
+    const useLabels: Record<string, string> = { COMMUTE: 'Daily Commute', FAMILY: 'Family/SUV', OFFROAD: 'Offroad', BUSINESS: 'Business/Taxi' };
+    const budgetLabels: Record<string, string> = { LOW: 'Under 3M', MID: '3M–6M', HIGH: '6M–10M', PREMIUM: '10M+' };
+    const engineLabels: Record<string, string> = { EV: 'Electric', HYBRID: 'Hybrid', ICE: 'Petrol/Diesel', ANY: 'Any' };
+
+    try {
+      if (!vehicles || vehicles.length === 0) {
+        await this.bot.sendMessage(chatId, [
+          `🧠 *Quiz Results*`,
+          ``,
+          `🔍 Use: ${useLabels[formData.use] || formData.use}`,
+          `💰 Budget: ${budgetLabels[formData.budget] || formData.budget} ETB`,
+          `⛽ Engine: ${engineLabels[formData.engine] || formData.engine}`,
+          ``,
+          `📭 No matching vehicles are currently in our showroom for your criteria.`,
+          ``,
+          `💡 Try /subscribe to get notified when matching cars arrive!`,
+        ].join('\n'), { parse_mode: 'Markdown' });
+        return;
+      }
+
+      await this.bot.sendMessage(chatId, [
+        `🧠 *Quiz Results — Your Perfect Matches!*`,
+        ``,
+        `🔍 Use: ${useLabels[formData.use] || formData.use}`,
+        `💰 Budget: ${budgetLabels[formData.budget] || formData.budget} ETB`,
+        `⛽ Engine: ${engineLabels[formData.engine] || formData.engine}`,
+        ``,
+        `Here are your top ${vehicles.length} match${vehicles.length > 1 ? 'es' : ''}:`,
+      ].join('\n'), { parse_mode: 'Markdown' });
+
+      for (const v of vehicles) {
+        const price = v.retail_price_etb ? `${(Number(v.retail_price_etb) / 1_000_000).toFixed(2)}M ETB` : 'Price on Request';
+        const photo = (v.images || [])[0] || null;
+        const caption = `🚗 *${v.year} ${v.make} ${v.model}*\n💰 ${price} | ⛽ ${v.fuel || 'N/A'}`;
+        const opts = {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🔍 View Details', callback_data: `inquire_${v.id}` }],
+              [{ text: '🚀 Buy Now', callback_data: `buy_now_${v.id}` }],
+            ],
+          },
+        };
+
+        if (photo) {
+          await this.bot.sendPhoto(chatId, photo, { caption, ...opts });
+        } else {
+          await this.bot.sendMessage(chatId, caption, opts);
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Failed to send quiz results for chat ${chatId}`, err);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ─── FEATURE 2: Customs Duty Estimator (/duty) ────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+
+  private async handleDutyStart(chatId: number) {
+    const client = this.supabase.getClient();
+    await client.from('telegram_sessions').upsert({
+      telegram_chat_id: chatId.toString(),
+      current_step: DUTY_STEPS.ASK_TYPE,
+      form_data: {},
+    }, { onConflict: 'telegram_chat_id' });
+
+    try {
+      await this.bot.sendMessage(chatId, '🧮 *Ethiopia Vehicle Import Duty Estimator*\n\nI\'ll calculate the estimated customs duty and taxes for importing a vehicle to Ethiopia.\n\n*Step 1/2: What type of vehicle?*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '⛽ ICE (Petrol/Diesel)', callback_data: 'duty_type_ICE' }],
+            [{ text: '🔋 Hybrid / PHEV', callback_data: 'duty_type_HYBRID' }],
+            [{ text: '⚡ Electric Vehicle (EV)', callback_data: 'duty_type_EV' }],
+          ],
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to start duty estimator for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleDutyType(chatId: number, vehicleType: string) {
+    const client = this.supabase.getClient();
+    await client.from('telegram_sessions').update({
+      current_step: DUTY_STEPS.ASK_FOB,
+      form_data: { vehicleType },
+    }).eq('telegram_chat_id', chatId.toString());
+
+    try {
+      await this.bot.sendMessage(chatId, '💲 *Step 2/2: Enter FOB value in USD*\n\nPlease type the FOB (Free On Board) price of the vehicle in US Dollars.\n\n_Example: 25000_', {
+        parse_mode: 'Markdown',
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send duty FOB prompt for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleDutyFobInput(chatId: number, text: string) {
+    const client = this.supabase.getClient();
+    const fobUsd = parseFloat(text.replace(/[^0-9.]/g, ''));
+
+    if (isNaN(fobUsd) || fobUsd <= 0) {
+      await this.bot.sendMessage(chatId, '❌ Please enter a valid number for the FOB value in USD.\n\n_Example: 25000_', { parse_mode: 'Markdown' });
+      return;
+    }
+
+    const { data: session } = await client
+      .from('telegram_sessions')
+      .select('form_data')
+      .eq('telegram_chat_id', chatId.toString())
+      .single();
+
+    const vehicleType = session?.form_data?.vehicleType || 'ICE';
+
+    // Clear session
+    await client.from('telegram_sessions').update({
+      current_step: null,
+      form_data: {},
+    }).eq('telegram_chat_id', chatId.toString());
+
+    // Ethiopian Import Duty Calculation
+    const EXCHANGE_RATE = 112.5; // ETB per USD (approximate)
+    const cifMultiplier = 1.10; // CIF ≈ FOB + 10% (insurance + freight)
+    const cifUsd = fobUsd * cifMultiplier;
+    const cifEtb = cifUsd * EXCHANGE_RATE;
+
+    // Tax rates based on vehicle type
+    let customsDutyRate: number;
+    let exciseTaxRate: number;
+    let surTaxRate: number;
+    let vatRate = 0.15; // 15% VAT standard
+    let withholdingRate = 0.03; // 3% withholding
+
+    switch (vehicleType) {
+      case 'EV':
+        customsDutyRate = 0.0;   // 0% for EVs
+        exciseTaxRate = 0.0;     // 0% for EVs
+        surTaxRate = 0.0;        // 0% for EVs
+        break;
+      case 'HYBRID':
+        customsDutyRate = 0.15;  // 15%
+        exciseTaxRate = 0.30;    // 30%
+        surTaxRate = 0.05;       // 5%
+        break;
+      default: // ICE
+        customsDutyRate = 0.35;  // 35%
+        exciseTaxRate = 0.60;    // 60% for engine > 1.8L (default to worst-case)
+        surTaxRate = 0.10;       // 10%
+        break;
+    }
+
+    const customsDuty = cifEtb * customsDutyRate;
+    const exciseTaxBase = cifEtb + customsDuty;
+    const exciseTax = exciseTaxBase * exciseTaxRate;
+    const vatBase = cifEtb + customsDuty + exciseTax;
+    const vat = vatBase * vatRate;
+    const surTaxBase = cifEtb + customsDuty + exciseTax + vat;
+    const surTax = surTaxBase * surTaxRate;
+    const withholding = cifEtb * withholdingRate;
+
+    const totalTax = customsDuty + exciseTax + vat + surTax + withholding;
+    const totalLandedCost = cifEtb + totalTax;
+
+    const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    const typeLabels: Record<string, string> = { ICE: '⛽ ICE (Petrol/Diesel)', HYBRID: '🔋 Hybrid/PHEV', EV: '⚡ Electric Vehicle' };
+
+    const result = [
+      `🧮 *Ethiopia Import Duty Estimate*`,
+      ``,
+      `📋 *Input*`,
+      `• Vehicle: ${typeLabels[vehicleType]}`,
+      `• FOB: $${fmt(fobUsd)} USD`,
+      `• CIF: $${fmt(cifUsd)} USD (FOB + 10%)`,
+      `• Exchange Rate: ${EXCHANGE_RATE} ETB/USD`,
+      ``,
+      `📊 *Tax Breakdown (ETB)*`,
+      `┌─────────────────────────────`,
+      `│ CIF Value:        ${fmt(cifEtb)}`,
+      `│ Customs Duty (${(customsDutyRate * 100).toFixed(0)}%):  ${fmt(customsDuty)}`,
+      `│ Excise Tax (${(exciseTaxRate * 100).toFixed(0)}%):   ${fmt(exciseTax)}`,
+      `│ VAT (${(vatRate * 100).toFixed(0)}%):          ${fmt(vat)}`,
+      `│ Sur Tax (${(surTaxRate * 100).toFixed(0)}%):       ${fmt(surTax)}`,
+      `│ Withholding (${(withholdingRate * 100).toFixed(0)}%):   ${fmt(withholding)}`,
+      `├─────────────────────────────`,
+      `│ 💰 *Total Tax:     ${fmt(totalTax)} ETB*`,
+      `│ 🏷️ *Landed Cost:   ${fmt(totalLandedCost)} ETB*`,
+      `└─────────────────────────────`,
+      ``,
+      `⚠️ _This is an estimate. Actual duties may vary based on engine size, vehicle age, and customs assessment._`,
+      ``,
+      `🔄 Run again: /duty`,
+    ].join('\n');
+
+    try {
+      await this.bot.sendMessage(chatId, result, { parse_mode: 'Markdown' });
+    } catch (err) {
+      this.logger.error(`Failed to send duty result for chat ${chatId}`, err);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ─── FEATURE 3: Smart Inventory Alerts (/subscribe) ───────────────
+  // ═══════════════════════════════════════════════════════════════════
+
+  private async handleSubscribeStart(chatId: number) {
+    try {
+      await this.bot.sendMessage(chatId, '🔔 *Smart Inventory Alerts*\n\nGet notified instantly when new vehicles matching your interest arrive at our showroom!\n\n*Choose a filter:*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🌐 All New Arrivals', callback_data: 'sub_filter_ALL' }],
+            [{ text: '⚡ Electric Vehicles Only', callback_data: 'sub_filter_EV' }],
+            [{ text: '🔋 Hybrids Only', callback_data: 'sub_filter_HYBRID' }],
+            [{ text: '🏔️ SUVs Only', callback_data: 'sub_filter_SUV' }],
+          ],
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to start subscribe for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleSubscribeFilter(chatId: number, filter: string) {
+    const client = this.supabase.getClient();
+
+    // Check for existing subscription
+    const { data: existing } = await client
+      .from('telegram_subscriptions')
+      .select('id')
+      .eq('telegram_chat_id', chatId.toString())
+      .eq('filter_type', filter)
+      .single();
+
+    if (existing) {
+      await this.bot.sendMessage(chatId, `✅ You're already subscribed to *${filter}* alerts! Use /unsubscribe to remove.`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    const { error } = await client.from('telegram_subscriptions').insert({
+      telegram_chat_id: chatId.toString(),
+      filter_type: filter,
+    });
+
+    if (error) {
+      this.logger.error(`Failed to save subscription for chat ${chatId}`, error);
+      await this.bot.sendMessage(chatId, '❌ Failed to subscribe. Please try again.');
+      return;
+    }
+
+    const filterLabels: Record<string, string> = { ALL: '🌐 All New Arrivals', EV: '⚡ Electric Vehicles', HYBRID: '🔋 Hybrids', SUV: '🏔️ SUVs' };
+
+    try {
+      await this.bot.sendMessage(chatId, [
+        `🔔 *Subscribed Successfully!*`,
+        ``,
+        `Filter: ${filterLabels[filter] || filter}`,
+        ``,
+        `You'll receive a notification every time a matching vehicle is listed in our showroom.`,
+        ``,
+        `To unsubscribe: /unsubscribe`,
+      ].join('\n'), { parse_mode: 'Markdown' });
+    } catch (err) {
+      this.logger.error(`Failed to confirm subscription for chat ${chatId}`, err);
+    }
+  }
+
+  private async handleUnsubscribe(chatId: number) {
+    const client = this.supabase.getClient();
+
+    const { data: subs } = await client
+      .from('telegram_subscriptions')
+      .select('id, filter_type')
+      .eq('telegram_chat_id', chatId.toString());
+
+    if (!subs || subs.length === 0) {
+      await this.bot.sendMessage(chatId, '📭 You have no active subscriptions. Use /subscribe to set up alerts!');
+      return;
+    }
+
+    const { error } = await client
+      .from('telegram_subscriptions')
+      .delete()
+      .eq('telegram_chat_id', chatId.toString());
+
+    if (error) {
+      this.logger.error(`Failed to unsubscribe chat ${chatId}`, error);
+      await this.bot.sendMessage(chatId, '❌ Failed to unsubscribe. Please try again.');
+      return;
+    }
+
+    try {
+      await this.bot.sendMessage(chatId, [
+        `🔕 *Unsubscribed Successfully*`,
+        ``,
+        `Removed ${subs.length} active alert${subs.length > 1 ? 's' : ''}: ${subs.map(s => s.filter_type).join(', ')}`,
+        ``,
+        `You can re-subscribe anytime: /subscribe`,
+      ].join('\n'), { parse_mode: 'Markdown' });
+    } catch (err) {
+      this.logger.error(`Failed to confirm unsubscribe for chat ${chatId}`, err);
+    }
+  }
+
+  // ─── Public: Dispatch alerts when a new vehicle enters SHOWROOM ────
+
+  async handleNewShowroomVehicle(vehicle: any) {
+    if (!this.bot) return;
+    const client = this.supabase.getClient();
+
+    const { data: subs, error } = await client
+      .from('telegram_subscriptions')
+      .select('telegram_chat_id, filter_type');
+
+    if (error || !subs || subs.length === 0) return;
+
+    const fuel = (vehicle.fuel || '').toUpperCase();
+    const driveTrain = (vehicle.drive_train || '').toUpperCase();
+    const model = (vehicle.model || '').toUpperCase();
+
+    const isEV = ['EV', 'ELECTRIC'].includes(fuel);
+    const isHybrid = ['HYBRID', 'PHEV'].includes(fuel);
+    const isSUV = driveTrain === 'AWD' || model.includes('SUV') || model.includes('LAND CRUISER') || model.includes('RAV4') || model.includes('TUCSON') || model.includes('TIGUAN');
+
+    for (const sub of subs) {
+      let shouldNotify = false;
+
+      switch (sub.filter_type) {
+        case 'ALL':
+          shouldNotify = true;
+          break;
+        case 'EV':
+          shouldNotify = isEV;
+          break;
+        case 'HYBRID':
+          shouldNotify = isHybrid;
+          break;
+        case 'SUV':
+          shouldNotify = isSUV;
+          break;
+      }
+
+      if (!shouldNotify) continue;
+
+      const price = vehicle.retail_price_etb
+        ? `${(Number(vehicle.retail_price_etb) / 1_000_000).toFixed(2)}M ETB`
+        : 'Price on Request';
+
+      const alert = [
+        `🔔 *New Showroom Arrival!*`,
+        ``,
+        `🚗 *${vehicle.year} ${vehicle.make} ${vehicle.model}*`,
+        `💰 Price: ${price}`,
+        `⛽ Type: ${vehicle.fuel || 'N/A'}`,
+        ``,
+        `This matches your *${sub.filter_type}* subscription.`,
+      ].join('\n');
+
+      try {
+        await this.bot.sendMessage(sub.telegram_chat_id, alert, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🔍 View Details', callback_data: `inquire_${vehicle.id}` }],
+              [{ text: '🚀 Buy Now', callback_data: `buy_now_${vehicle.id}` }],
+            ],
+          },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to send alert to chat ${sub.telegram_chat_id}`, err);
+      }
+    }
+
+    this.logger.log(`📣 Dispatched showroom alerts for ${vehicle.year} ${vehicle.make} ${vehicle.model} to ${subs.length} subscriber(s).`);
   }
 }

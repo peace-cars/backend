@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { FsmService } from '../common/fsm.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class VehiclesService {
@@ -11,6 +12,7 @@ export class VehiclesService {
     private supabaseScoped: SupabaseScopedService,
     private supabaseAdmin: SupabaseService,
     private fsmService: FsmService,
+    private telegramService: TelegramService,
   ) {}
 
   async getShowroom() {
@@ -152,6 +154,13 @@ export class VehiclesService {
         this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
         throw new BadRequestException(`DB_ERROR: ${error.message}`);
       }
+
+      if (newVehicle.status === 'SHOWROOM') {
+        this.telegramService.handleNewShowroomVehicle(newVehicle).catch(err => {
+          this.logger.error('Failed to dispatch new vehicle showroom alert', err);
+        });
+      }
+
       return newVehicle;
     } catch (err) {
       this.logger.error('Failed to create vehicle', err);
@@ -252,6 +261,13 @@ export class VehiclesService {
         this.logger.error(`Supabase Update Error: ${error.message} (${error.code})`);
         throw new BadRequestException(`DB_ERROR: ${error.message}`);
       }
+
+      if (updated.status === 'SHOWROOM' && existing.status !== 'SHOWROOM') {
+        this.telegramService.handleNewShowroomVehicle(updated).catch(err => {
+          this.logger.error('Failed to dispatch transitioned vehicle showroom alert', err);
+        });
+      }
+
       return updated;
     } catch (err) {
       this.logger.error(`Failed to update vehicle ${id}`, err);
