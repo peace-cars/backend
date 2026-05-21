@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { StaffBudgetsService } from './staff-budgets.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -18,7 +18,17 @@ export class StaffBudgetsController {
 
   @Get()
   @Roles(Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
-  async getAllBudgets(@Req() req: any) {
+  async getAllBudgets(@Req() req: any, @Query('branchId') branchId?: string) {
+    if (branchId) {
+      if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
+        return this.budgetsService.getBranchBudgets(branchId);
+      } else if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.includes(branchId)) {
+        return this.budgetsService.getBranchBudgets(branchId);
+      } else {
+        return [];
+      }
+    }
+
     if (req.user.role === Role.DISTRICT_MANAGER) {
       if (!req.user.districtId) return [];
       return this.budgetsService.getDistrictBudgets(req.user.districtId);

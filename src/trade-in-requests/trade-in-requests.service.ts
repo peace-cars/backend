@@ -12,7 +12,7 @@ export class TradeInRequestsService {
     private readonly permissions: PermissionsService
   ) {}
 
-  async getAllLeads(userId: string, userRole: Role, scopedBranchIds?: string[]) {
+  async getAllLeads(userId: string, userRole: Role, scopedBranchIds?: string[], explicitBranchId?: string) {
     // Use admin client to bypass RLS on inspections table
     // Endpoint is already protected by RolesGuard + ScopeGuard; scoping is applied manually below
     const supabase = this.adminSupabase.getClient();
@@ -31,21 +31,35 @@ export class TradeInRequestsService {
         )
       `);
 
-    if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
-       // Global view — no filter
-    } else if (scopedBranchIds && scopedBranchIds.length > 0) {
-       // Use hierarchy-aware scoping via scopedBranchIds
-       query = query.or(
-         scopedBranchIds.map(id => `branch_id.eq.${id}`).join(',') + ',branch_id.is.null'
-       );
+    // If an explicit branch is requested by a GM/DM, filter to that branch.
+    // Ensure the branch requested is actually within their scope (or they are GM).
+    if (explicitBranchId) {
+      if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
+        query = query.eq('branch_id', explicitBranchId);
+      } else if (scopedBranchIds && scopedBranchIds.includes(explicitBranchId)) {
+        query = query.eq('branch_id', explicitBranchId);
+      } else {
+        // If they requested a branch they don't have access to, return empty or default to their scope.
+        // We'll throw forbidden to be safe.
+        throw new ForbiddenException("You do not have access to this branch.");
+      }
     } else {
-       // Fallback: scope by user's assigned branch
-       const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', userId).single();
-       if (profile?.location_id) {
-          query = query.or(`branch_id.eq.${profile.location_id},branch_id.is.null`);
-       } else {
-          query = query.is('branch_id', null);
-       }
+      if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
+         // Global view — no filter
+      } else if (scopedBranchIds && scopedBranchIds.length > 0) {
+         // Use hierarchy-aware scoping via scopedBranchIds
+         query = query.or(
+           scopedBranchIds.map(id => `branch_id.eq.${id}`).join(',') + ',branch_id.is.null'
+         );
+      } else {
+         // Fallback: scope by user's assigned branch
+         const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', userId).single();
+         if (profile?.location_id) {
+            query = query.or(`branch_id.eq.${profile.location_id},branch_id.is.null`);
+         } else {
+            query = query.is('branch_id', null);
+         }
+      }
     }
 
     const { data, error } = await query.order('created_at', { ascending: false });

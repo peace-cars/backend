@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, ForbiddenException, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TradeInRequestsService } from './trade-in-requests.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
@@ -6,29 +7,36 @@ import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
 import { CreateTradeInDto, InspectionUploadDto, UpdateStatusDto } from './dto/trade-in.dto';
 
+@ApiTags('Trade-Ins / Vehicle Acquisitions')
+@ApiBearerAuth('JWT-auth')
 @Controller('trade-in-requests')
 @UseGuards(RolesGuard, ScopeGuard)
 export class TradeInRequestsController {
   constructor(private readonly service: TradeInRequestsService) {}
 
+  @ApiOperation({ summary: 'Get all trade-in leads', description: 'Returns all leads within the user\'s authorization scope.' })
+  @ApiQuery({ name: 'branchId', required: false, description: 'Filter by specific branch ID (Requires GM/DM role)' })
   @Get()
   @Roles(Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
-  getAllLeads(@Req() req: any) {
-    return this.service.getAllLeads(req.user.id, req.user.role, req.user.scopedBranchIds);
+  getAllLeads(@Req() req: any, @Query('branchId') branchId?: string) {
+    return this.service.getAllLeads(req.user.id, req.user.role, req.user.scopedBranchIds, branchId);
   }
 
+  @ApiOperation({ summary: 'Get trade-in leads assigned to current user' })
   @Get('me')
   @Roles(Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getAssignedLeads(@Req() req: any) {
      return this.service.getAssignedLeads(req.user.id);
   }
 
+  @ApiOperation({ summary: 'Create a new trade-in lead' })
   @Post()
   @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   createLead(@Req() req: any, @Body() data: CreateTradeInDto) {
     return this.service.createLead(req.user.id, data);
   }
 
+  @ApiOperation({ summary: 'Get details of a specific trade-in lead' })
   @Get(':id')
   @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getLeadById(@Req() req: any, @Param('id') id: string) {

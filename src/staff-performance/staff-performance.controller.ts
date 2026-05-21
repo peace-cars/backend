@@ -9,8 +9,8 @@ export class StaffPerformanceController {
   constructor(private readonly performanceService: StaffPerformanceService) {}
 
   @Get('leaderboard')
-  getLeaderboard() {
-    return this.performanceService.getLeaderboard();
+  getLeaderboard(@Query('branchId') branchId?: string) {
+    return this.performanceService.getLeaderboard(branchId);
   }
 
   @Post('clock')

@@ -7,13 +7,19 @@ export class StaffPerformanceService {
 
   constructor(private readonly supabaseService: SupabaseService) {}
   
-  async getLeaderboard() {
+  async getLeaderboard(branchId?: string) {
     try {
       const supabase = this.supabaseService.getClient();
-      const { data, error } = await supabase
+      let query = supabase
         .from('staff_leaderboard_stats')
         .select('*')
         .order('gamification_points', { ascending: false });
+
+      if (branchId) {
+        query = query.eq('location_id', branchId);
+      }
+
+      const { data, error } = await query;
         
       if (error) {
         this.logger.error(`Error fetching leaderboard: ${error.message}`);

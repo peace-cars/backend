@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Req, Body, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Req, Body, UseGuards, Param, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { VehiclesService } from './vehicles.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
@@ -7,11 +8,14 @@ import { RequiresPermission } from '../auth/permissions.decorator';
 import { Role } from '../auth/roles.enums';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
 
+@ApiTags('Vehicles / Inventory')
 @Controller('vehicles')
 export class VehiclesController {
   constructor(private readonly vehiclesService: VehiclesService) {}
 
   // Public Endpoint: Shows only RETAIL models for the Client Frontend
+  @ApiOperation({ summary: 'Get public showroom inventory', description: 'Returns a list of vehicles available for retail sale.' })
+  @ApiResponse({ status: 200, description: 'List of showroom vehicles.' })
   @Get('showroom')
   async getShowroom() {
     const rawData = await this.vehiclesService.getShowroom();
@@ -35,6 +39,8 @@ export class VehiclesController {
     }));
   }
 
+  @ApiOperation({ summary: 'Get details of a specific showroom vehicle' })
+  @ApiResponse({ status: 200, description: 'Vehicle details.' })
   @Get('showroom/:id')
   async getVehicleDetails(@Param('id') id: string) {
     const v = await this.vehiclesService.getVehicleById(id);
@@ -71,6 +77,8 @@ export class VehiclesController {
     };
   }
 
+  @ApiOperation({ summary: 'Get profitability report' })
+  @ApiBearerAuth('JWT-auth')
   @Get('profitability')
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.audit')
@@ -85,13 +93,18 @@ export class VehiclesController {
     return this.vehiclesService.getAgedInventory(60);
   }
 
+  @ApiOperation({ summary: 'Get all vehicles', description: 'Returns all vehicles within the user\'s authorization scope.' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiQuery({ name: 'branchId', required: false, description: 'Filter by specific branch ID (Requires GM/DM role)' })
   @Get()
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.view')
-  async getAllVehicles(@Req() req: any) {
-    return this.vehiclesService.getAll(req.user);
+  async getAllVehicles(@Req() req: any, @Query('branchId') branchId?: string) {
+    return this.vehiclesService.getAll(req.user, branchId);
   }
 
+  @ApiOperation({ summary: 'Create a new vehicle record' })
+  @ApiBearerAuth('JWT-auth')
   @Post()
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.create')

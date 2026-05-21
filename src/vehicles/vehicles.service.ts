@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { FsmService } from '../common/fsm.service';
@@ -77,7 +77,7 @@ export class VehiclesService {
     }
   }
 
-  async getAll(user: any) {
+  async getAll(user: any, explicitBranchId?: string) {
     try {
       const client = this.supabaseScoped.getClient();
       let query = client
@@ -88,15 +88,25 @@ export class VehiclesService {
           conversations(count)
         `);
 
-      // Hierarchy-Aware Scoping via scopedBranchIds (populated by RolesGuard)
-      if (user.role === 'ADMIN' || user.role === 'GENERAL_MANAGER' || user.role === 'FINANCE_AUDITOR') {
-        // Global view — no filter
-      } else if (user.scopedBranchIds && user.scopedBranchIds.length > 0) {
-        // DM or Staff: filter to their scoped branches
-        query = query.in('branch_id', user.scopedBranchIds);
-      } else if (user.branchId) {
-        // Fallback: filter by single branch
-        query = query.eq('branch_id', user.branchId);
+      if (explicitBranchId) {
+        if (user.role === 'ADMIN' || user.role === 'GENERAL_MANAGER' || user.role === 'FINANCE_AUDITOR') {
+          query = query.eq('branch_id', explicitBranchId);
+        } else if (user.scopedBranchIds && user.scopedBranchIds.includes(explicitBranchId)) {
+          query = query.eq('branch_id', explicitBranchId);
+        } else {
+          throw new ForbiddenException("You do not have access to this branch.");
+        }
+      } else {
+        // Hierarchy-Aware Scoping via scopedBranchIds (populated by RolesGuard)
+        if (user.role === 'ADMIN' || user.role === 'GENERAL_MANAGER' || user.role === 'FINANCE_AUDITOR') {
+          // Global view — no filter
+        } else if (user.scopedBranchIds && user.scopedBranchIds.length > 0) {
+          // DM or Staff: filter to their scoped branches
+          query = query.in('branch_id', user.scopedBranchIds);
+        } else if (user.branchId) {
+          // Fallback: filter by single branch
+          query = query.eq('branch_id', user.branchId);
+        }
       }
 
       const { data, error } = await query.order('created_at', { ascending: false });

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, Query } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
@@ -15,20 +15,30 @@ export class PeopleController {
 
   @Get()
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
-  async getAll(@Req() req: any) {
+  async getAll(@Req() req: any, @Query('branchId') branchId?: string) {
     try {
       let query = this.supabaseService.getClient()
         .from('profiles')
         .select('*, locations(name)');
       
-      // Use scopedBranchIds for hierarchy-aware filtering
-      // GM: sees all (scopedBranchIds contains ALL branches)
-      // DM: sees staff across ALL branches in their district
-      // FINANCE_AUDITOR: sees all (no branch scoping needed)
-      if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.length > 0) {
-        query = query.in('location_id', req.user.scopedBranchIds);
+      if (branchId) {
+        if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
+          query = query.eq('location_id', branchId);
+        } else if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.includes(branchId)) {
+          query = query.eq('location_id', branchId);
+        } else {
+           return []; // Unauthorized for this branch
+        }
+      } else {
+        // Use scopedBranchIds for hierarchy-aware filtering
+        // GM: sees all (scopedBranchIds contains ALL branches)
+        // DM: sees staff across ALL branches in their district
+        // FINANCE_AUDITOR: sees all (no branch scoping needed)
+        if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.length > 0) {
+          query = query.in('location_id', req.user.scopedBranchIds);
+        }
+        // GM and FINANCE_AUDITOR see all — no filter applied
       }
-      // GM and FINANCE_AUDITOR see all — no filter applied
 
       const { data: profiles, error } = await query;
       

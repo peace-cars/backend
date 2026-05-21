@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { GlobalExceptionFilter } from './common/http-exception.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
+import { TransformInterceptor } from './common/transform.interceptor';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
@@ -27,6 +29,9 @@ async function bootstrap() {
 
   // Global Exception Filter to sanitize errors
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Global Interceptor for API Response Standardization
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   // Global Interceptor for logging request/response times
   app.useGlobalInterceptors(new LoggingInterceptor());
@@ -58,6 +63,27 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
+
+  // Swagger OpenAPI Documentation Configuration
+  const config = new DocumentBuilder()
+    .setTitle('PeaceCars Enterprise API')
+    .setDescription('Official OpenAPI documentation for the PeaceCars ERP backend.')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth', 
+    )
+    .build();
+    
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');

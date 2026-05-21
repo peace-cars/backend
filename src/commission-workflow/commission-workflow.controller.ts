@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, Param, UseGuards, Req, Logger } from '@nestjs/common';
+import { Controller, Get, Patch, Body, Param, UseGuards, Req, Logger, Query } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
@@ -35,16 +35,26 @@ export class CommissionWorkflowController {
 
   @Get()
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
-  async getAll(@Req() req: any) {
+  async getAll(@Req() req: any, @Query('branchId') branchId?: string) {
     const client = this.supabaseService.getClient();
     let query = client
       .from('commissions')
       .select('*, profiles!commissions_beneficiary_id_fkey(full_name, role, location_id)')
       .order('created_at', { ascending: false });
 
-    // DM scoping: only see commissions from staff in their district branches
-    if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.length > 0) {
-      query = query.in('branch_id', req.user.scopedBranchIds);
+    if (branchId) {
+      if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
+        query = query.eq('branch_id', branchId);
+      } else if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.includes(branchId)) {
+        query = query.eq('branch_id', branchId);
+      } else {
+        return [];
+      }
+    } else {
+      // DM scoping: only see commissions from staff in their district branches
+      if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.length > 0) {
+        query = query.in('branch_id', req.user.scopedBranchIds);
+      }
     }
 
     const { data, error } = await query;
