@@ -13,19 +13,30 @@ export class FCMService implements OnModuleInit {
 
   onModuleInit() {
     try {
-      const serviceAccountPath = path.join(process.cwd(), 'peace-cars-firebase-admin.json');
-      if (fs.existsSync(serviceAccountPath)) {
-        const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+      const envAccount = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT;
+      const envPath = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH;
+      const defaultPath = path.join(process.cwd(), 'peace-cars-firebase-admin.json');
+      const serviceAccountPath = envPath ? path.resolve(envPath) : defaultPath;
+      let serviceAccount: any = null;
+
+      if (envAccount) {
+        serviceAccount = JSON.parse(envAccount);
+        this.logger.log('🔥 Firebase Admin SDK initialized from FIREBASE_ADMIN_SERVICE_ACCOUNT env variable.');
+      } else if (fs.existsSync(serviceAccountPath)) {
+        serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+        this.logger.log(`🔥 Firebase Admin SDK initialized from service account file: ${serviceAccountPath}`);
+      }
+
+      if (serviceAccount) {
         if (admin.apps.length === 0) {
           this.firebaseApp = admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
+            credential: admin.credential.cert(serviceAccount),
           });
         } else {
           this.firebaseApp = admin.app();
         }
-        this.logger.log('🔥 Firebase Admin SDK successfully initialized using service account key.');
       } else {
-        this.logger.warn('⚠️ peace-cars-firebase-admin.json not found. Push notifications will run in Mock Mode.');
+        this.logger.warn('⚠️ Firebase service account not configured. Push notifications will run in Mock Mode.');
       }
     } catch (e) {
       this.logger.error(`Failed to initialize Firebase Admin SDK: ${e.message}`);

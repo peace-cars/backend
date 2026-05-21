@@ -75,12 +75,19 @@ export class PermissionsService {
        return true;
     }
 
-    // Role-based branch scoping (Strict IDOR prevention)
-    if (userRole === Role.DISTRICT_MANAGER || userRole === Role.STAFF) {
-       const { data: profile } = await client.from('profiles').select('location_id').eq('id', userId).single();
-       if (profile?.location_id && lead.branch_id === profile.location_id) {
-           return true;
-       }
+    const { data: profile } = await client.from('profiles').select('location_id, district_id').eq('id', userId).single();
+    const userBranchId = profile?.location_id;
+    const userDistrictId = profile?.district_id;
+
+    if (userRole === Role.STAFF && userBranchId && lead.branch_id === userBranchId) {
+      return true;
+    }
+
+    if (userRole === Role.DISTRICT_MANAGER && userDistrictId && lead.branch_id) {
+      const { data: branch } = await client.from('branches').select('district_id').eq('id', lead.branch_id).single();
+      if (branch?.district_id === userDistrictId) {
+        return true;
+      }
     }
 
     return false;

@@ -36,15 +36,15 @@ export class TradeInRequestsService {
     } else if (scopedBranchIds && scopedBranchIds.length > 0) {
        // Use hierarchy-aware scoping via scopedBranchIds
        query = query.or(
-         scopedBranchIds.map(id => `location_id.eq.${id}`).join(',') + ',location_id.is.null'
+         scopedBranchIds.map(id => `branch_id.eq.${id}`).join(',') + ',branch_id.is.null'
        );
     } else {
-       // Fallback: scope by user's assigned location
+       // Fallback: scope by user's assigned branch
        const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', userId).single();
        if (profile?.location_id) {
-          query = query.or(`location_id.eq.${profile.location_id},location_id.is.null`);
+          query = query.or(`branch_id.eq.${profile.location_id},branch_id.is.null`);
        } else {
-          query = query.is('location_id', null);
+          query = query.is('branch_id', null);
        }
     }
 
@@ -84,7 +84,7 @@ export class TradeInRequestsService {
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
         locations(name, address)
       `)
-      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,location_id.eq.${profile.location_id})`)
+      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,branch_id.eq.${profile.location_id})`)
       .order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
@@ -260,7 +260,14 @@ export class TradeInRequestsService {
     return data;
   }
 
-  async updateStatus(leadId: string, status: string) {
+  async updateStatus(userId: string, userRole: Role, leadId: string, status: string) {
+    if (userRole !== Role.GENERAL_MANAGER && userRole !== Role.FINANCE_AUDITOR) {
+      const canAccess = await this.permissions.canAccessTradeIn(userId, userRole, leadId);
+      if (!canAccess) {
+        throw new ForbiddenException('You do not have permission to update this trade-in lead.');
+      }
+    }
+
     const admin = this.adminSupabase.getClient();
     const { data, error } = await admin
       .from('trade_in_requests')

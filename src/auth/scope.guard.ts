@@ -51,7 +51,11 @@ export class ScopeGuard implements CanActivate {
       }
 
       // If the request targets a specific branch, ensure it's within the DM's district
-      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.id || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
+      const routePath = request.route?.path || '';
+      const treatIdAsBranch = /(?:branches?|locations?)/i.test(baseUrl) || /(?:branch|location|district)/i.test(routePath);
+      const explicitTargetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const targetBranchId = explicitTargetBranchId || (treatIdAsBranch ? request.params?.id : undefined);
       if (targetBranchId && !scopedBranchIds.includes(targetBranchId)) {
         this.logger.warn(`[SCOPE DENIED] DM ${user.id} tried to access branch ${targetBranchId} outside district ${user.districtId}`);
         throw new ForbiddenException('Action outside of assigned district scope.');
@@ -73,7 +77,11 @@ export class ScopeGuard implements CanActivate {
       }
 
       // Staff can only operate within their own branch
-      const targetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.id || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
+      const routePath = request.route?.path || '';
+      const treatIdAsBranch = /(?:branches?|locations?)/i.test(baseUrl) || /(?:branch|location|district)/i.test(routePath);
+      const explicitTargetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const targetBranchId = explicitTargetBranchId || (treatIdAsBranch ? request.params?.id : undefined);
       if (targetBranchId && targetBranchId !== user.branchId) {
         this.logger.warn(`[SCOPE DENIED] Staff ${user.id} tried to access branch ${targetBranchId}, assigned to ${user.branchId}`);
         throw new ForbiddenException('Action outside of assigned branch scope.');
