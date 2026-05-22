@@ -138,7 +138,7 @@ export class VehiclesService {
         plate_code: data.plate_code || null,
         vin_chassis: data.vin_chassis || `VIN-${Date.now()}`,
         status: data.status || 'SOURCING',
-        location_id: data.location_id || null,
+        branch_id: data.branch_id || null,
         images: data.images || [],
         battery_soh_percent: data.battery_soh_percent || null,
         certified_km: data.certified_km || null,
@@ -233,7 +233,7 @@ export class VehiclesService {
         plate_code: data.plate_code,
         vin_chassis: data.vin_chassis,
         status: data.status,
-        location_id: data.location_id || null,
+        branch_id: data.branch_id || null,
         images: data.images,
         battery_soh_percent: data.battery_soh_percent,
         certified_km: data.certified_km,
@@ -320,7 +320,7 @@ export class VehiclesService {
       // Fallback: manual calculation from vehicles table
       const { data, error } = await client
         .from('vehicles')
-        .select('id, make, model, year, retail_price_etb, unit_cost, sold_date, location_id, created_at')
+        .select('id, make, model, year, retail_price_etb, unit_cost, sold_date, branch_id, created_at')
         .eq('status', 'SOLD')
         .order('sold_date', { ascending: false });
       
@@ -361,7 +361,7 @@ export class VehiclesService {
       
       const { data, error } = await client
         .from('vehicles')
-        .select('id, make, model, year, retail_price_etb, unit_cost, floor_plan_loan, maturity_date, created_at, location_id, branches:location_id(name)')
+        .select('id, make, model, year, retail_price_etb, unit_cost, floor_plan_loan, maturity_date, created_at, branch_id, branches:branch_id(name)')
         .neq('status', 'SOLD')
         .lt('created_at', cutoffDate)
         .order('created_at', { ascending: true });
@@ -417,7 +417,7 @@ export class VehiclesService {
       }
 
       // Consolidate location/branch IDs
-      const hubId = lead.location_id || lead.branch_id;
+      const hubId = lead.branch_id;
 
       const { data: vehicle, error: vehError } = await admin
         .from('vehicles')
@@ -427,8 +427,7 @@ export class VehiclesService {
           year: year,
           retail_price_etb: retailPrice,
           status: 'REFURBISHMENT',
-          location_id: hubId,
-          branch_id: hubId, // Set both for consistency across all views/filters
+          branch_id: hubId,
           vin_chassis: `TRAD-${leadId.substring(0,8).toUpperCase()}`,
           images: lead.photos || []
         }])

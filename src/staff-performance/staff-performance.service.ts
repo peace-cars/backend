@@ -16,7 +16,7 @@ export class StaffPerformanceService {
         .order('gamification_points', { ascending: false });
 
       if (branchId) {
-        query = query.eq('location_id', branchId);
+        query = query.eq('branch_id', branchId);
       }
 
       const { data, error } = await query;
@@ -31,7 +31,7 @@ export class StaffPerformanceService {
         rank: idx + 1,
         fullName: st.full_name,
         role: st.is_inspector_verified ? "Certified Inspector" : "Triage Specialist",
-        locationId: st.location_id,
+        locationId: st.branch_id,
         score: st.gamification_points,
         totalSales: st.total_deals_closed,
         averageRating: st.average_rating,
@@ -58,8 +58,8 @@ export class StaffPerformanceService {
          await supabase.from('staff_shifts').update({ is_active: false, clocked_out_at: new Date() }).eq('id', activeShift.id);
          return { success: true, message: "Clocked out", isOnline: false };
       } else {
-         const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', staffId).single();
-         await supabase.from('staff_shifts').insert({ staff_id: staffId, location_id: profile?.location_id, is_active: true });
+         const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', staffId).single();
+         await supabase.from('staff_shifts').insert({ staff_id: staffId, branch_id: profile?.branch_id, is_active: true });
          return { success: true, message: "Clocked in", isOnline: true, shiftStartedAt: new Date().toISOString() };
       }
     } catch (e) {
@@ -75,7 +75,7 @@ export class StaffPerformanceService {
       const { data: profile, error } = await supabase
         .from('profiles')
         .select(`
-          id, full_name, role, location_id, avatar_url, commission_tier, 
+          id, full_name, role, branch_id, avatar_url, commission_tier, 
           is_verified, is_inspector_verified, gamification_points
         `)
         .eq('id', staffId)
@@ -121,7 +121,7 @@ export class StaffPerformanceService {
       let query = supabase
         .from('profiles')
         .select(`
-          id, full_name, role, location_id, is_verified, is_inspector_verified, 
+          id, full_name, role, branch_id, is_verified, is_inspector_verified, 
           gamification_points, total_completed_tasks, performance_rating,
           locations(name)
         `)
@@ -129,7 +129,7 @@ export class StaffPerformanceService {
         .order('full_name');
 
       if (locationId) {
-        query = query.eq('location_id', locationId);
+        query = query.eq('branch_id', locationId);
       }
 
       const { data: profiles, error } = await query;

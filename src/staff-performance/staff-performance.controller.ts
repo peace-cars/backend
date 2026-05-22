@@ -28,11 +28,11 @@ export class StaffPerformanceController {
   @Get('branch-roster')
   @UseGuards(RolesGuard)
   @Roles('GENERAL_MANAGER', 'DISTRICT_MANAGER')
-  getRoster(@Req() req: any) {
+  getRoster(@Req() req: any, @Query('branchId') branchId?: string) {
     if (req.user.role === 'DISTRICT_MANAGER' && !req.user.locationId) {
       return [];
     }
-    const locationId = req.user.role === 'DISTRICT_MANAGER' ? req.user.locationId : undefined;
+    const locationId = req.user.role === 'DISTRICT_MANAGER' ? req.user.locationId : branchId;
     return this.performanceService.getRoster(locationId);
   }
 

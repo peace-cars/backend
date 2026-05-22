@@ -67,13 +67,13 @@ export class BranchManagementController {
     // Enrich with staff counts per branch
     const { data: profiles } = await client
       .from('profiles')
-      .select('location_id, role');
+      .select('branch_id, role');
 
     const staffCounts: Record<string, number> = {};
     if (profiles) {
       for (const p of profiles) {
-        if (p.location_id) {
-          staffCounts[p.location_id] = (staffCounts[p.location_id] || 0) + 1;
+        if (p.branch_id) {
+          staffCounts[p.branch_id] = (staffCounts[p.branch_id] || 0) + 1;
         }
       }
     }
@@ -123,7 +123,7 @@ export class BranchManagementController {
     const { data, error } = await client
       .from('profiles')
       .select('*')
-      .eq('location_id', branchId)
+      .eq('branch_id', branchId)
       .order('full_name');
 
     if (error) {
@@ -138,7 +138,7 @@ export class BranchManagementController {
       role: p.role,
       isActive: p.is_verified,
       commissionTier: p.commission_tier,
-      locationId: p.location_id,
+      locationId: p.branch_id,
     }));
   }
 
@@ -196,10 +196,10 @@ export class BranchManagementController {
       return { success: false, message: updateError.message };
     }
 
-    // Also update the DM's own location_id to match their branch
+    // Also update the DM's own branch_id to match their branch
     await client
       .from('profiles')
-      .update({ location_id: branchId })
+      .update({ branch_id: branchId })
       .eq('id', body.managerId);
 
     this.logger.log(`Assigned DM ${person.full_name} to branch ${branchId}`);

@@ -52,7 +52,7 @@ export class CustomOrdersService {
     if (userRole !== Role.GENERAL_MANAGER && userRole !== Role.FINANCE_AUDITOR) {
       if (scopedBranchIds && scopedBranchIds.length > 0) {
         query = query.or(
-          scopedBranchIds.map(id => `location_id.eq.${id}`).join(',') + ',location_id.is.null'
+          scopedBranchIds.map(id => `branch_id.eq.${id}`).join(',') + ',branch_id.is.null'
         );
       }
     }

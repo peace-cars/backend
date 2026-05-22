@@ -61,6 +61,8 @@ async function bootstrap() {
       }
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    allowedHeaders: 'Content-Type,Authorization',
+    exposedHeaders: 'Authorization',
     credentials: true,
   });
 

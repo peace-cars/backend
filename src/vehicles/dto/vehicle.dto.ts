@@ -39,8 +39,6 @@ export class CreateVehicleDto {
   @IsString()
   status?: string;
 
-  @IsOptional()
-  location_id?: string | null;
 
   @IsOptional()
   @IsNumber()
@@ -118,8 +116,6 @@ export class UpdateVehicleDto {
   @IsString()
   status?: string;
 
-  @IsOptional()
-  location_id?: string | null;
 
   @IsOptional()
   @IsNumber()

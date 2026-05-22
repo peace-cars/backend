@@ -42,16 +42,16 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!staff_budgets_requester_id_fkey(full_name, role, location_id, locations(name))
+          profiles!staff_budgets_requester_id_fkey(full_name, role, branch_id, locations(name))
         `)
-        .eq('profiles.location_id', locationId);
+        .eq('profiles.branch_id', locationId);
 
       if (error) {
         this.logger.error(`Error fetching branch budgets: ${error.message}`);
         return [];
       }
       
-      return (data || []).filter((b: any) => b.profiles?.location_id === locationId);
+      return (data || []).filter((b: any) => b.profiles?.branch_id === locationId);
     } catch (e) {
       this.logger.error(`Failed to fetch branch budgets: ${e.message}`);
       return [];

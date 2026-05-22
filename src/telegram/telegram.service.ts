@@ -859,7 +859,7 @@ export class TelegramService implements OnModuleInit {
     const { data: dm } = await client
       .from('profiles')
       .select('id, full_name, telegram_chat_id')
-      .eq('location_id', branchId)
+      .eq('branch_id', branchId)
       .eq('role', 'DISTRICT_MANAGER')
       .limit(1)
       .single();

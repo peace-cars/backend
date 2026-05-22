@@ -5,6 +5,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from './auth.service';
 import { Role } from './roles.enums';
 import { PERMISSIONS_KEY } from './permissions.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -16,6 +17,7 @@ export class RolesGuard implements CanActivate {
     private supabaseService: SupabaseService,
     @Inject(forwardRef(() => AuthService))
     private authService: AuthService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -57,53 +59,45 @@ export class RolesGuard implements CanActivate {
             if (error || !user) throw new UnauthorizedException('Invalid JWT Token.');
 
             // Fetch Deep Profile with Roles, Permissions, AND Location→District hierarchy
-            const { data: profile, error: profileError } = await this.supabaseService.getClient()
-              .from('profiles')
-              .select(`
-                id,
-                full_name,
-                role,
-                location_id,
-                district_id,
-                phone_number,
-                is_verified,
-                gamification_points,
-                role_id,
-                roles (
-                  name,
-                  role_permissions (
-                    permissions (
-                      slug
-                    )
-                  )
-                )
-              `)
-              .eq('id', user.id)
-              .single();
+            const profile = await this.prisma.profiles.findUnique({
+              where: { id: user.id },
+              include: {
+                roles: {
+                  include: {
+                    permissions: {
+                      include: {
+                        permission: {
+                          select: { slug: true }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            });
             
-            if (profileError || !profile) {
-              this.logger.error(`Profile not found for user ${user.id}: ${profileError?.message}`);
+            if (!profile) {
+              this.logger.error(`Profile not found for user ${user.id}`);
               throw new UnauthorizedException('User profile not found or incomplete.');
             }
             
-            const profileData = profile as any;
-            const roleData = Array.isArray(profileData?.roles) ? profileData?.roles[0] : profileData?.roles;
+            const profileData = profile;
+            const roleData = profileData.roles;
             const roleName = roleData?.name || profileData?.role || Role.USER;
-            const permissions = roleData?.role_permissions?.map((rp: any) => rp.permissions.slug) || [];
+            const permissions = roleData?.permissions?.map((rp: any) => rp.permission?.slug).filter(Boolean) || [];
             
-            // Resolve hierarchy: branchId from location_id, districtId from profile or location's district
-            let resolvedDistrictId = profileData?.district_id || null;
-            const resolvedBranchId = profileData?.location_id || null;
+            // Resolve hierarchy: branchId from branch_id, districtId from profile or location's district
+            let resolvedDistrictId = profileData.district_id || null;
+            const resolvedBranchId = profileData.branch_id || null;
 
             // If profile doesn't have district_id directly, derive it from the branch/location
             if (!resolvedDistrictId && resolvedBranchId) {
               try {
-                const { data: locationData } = await this.supabaseService.getClient()
-                  .from('locations')
-                  .select('district_id')
-                  .eq('id', resolvedBranchId)
-                  .single();
-                resolvedDistrictId = locationData?.district_id || null;
+                const branchData = await this.prisma.branches.findUnique({
+                  where: { id: resolvedBranchId },
+                  select: { district_id: true }
+                });
+                resolvedDistrictId = branchData?.district_id || null;
               } catch (e) {
                 this.logger.warn(`Could not resolve district for branch ${resolvedBranchId}`);
               }
@@ -113,11 +107,11 @@ export class RolesGuard implements CanActivate {
             let scopedBranchIds: string[] = [];
             if (roleName === Role.DISTRICT_MANAGER && resolvedDistrictId) {
               try {
-                const { data: districtBranches } = await this.supabaseService.getClient()
-                  .from('locations')
-                  .select('id')
-                  .eq('district_id', resolvedDistrictId);
-                scopedBranchIds = districtBranches?.map(b => b.id) || [];
+                const districtBranches = await this.prisma.branches.findMany({
+                  where: { district_id: resolvedDistrictId },
+                  select: { id: true }
+                });
+                scopedBranchIds = districtBranches.map(b => b.id);
               } catch (e) {
                 this.logger.warn(`Could not resolve branches for district ${resolvedDistrictId}`);
               }
@@ -126,10 +120,10 @@ export class RolesGuard implements CanActivate {
             // For GMs, get ALL branch IDs (global scope)
             if (roleName === Role.GENERAL_MANAGER) {
               try {
-                const { data: allBranches } = await this.supabaseService.getClient()
-                  .from('locations')
-                  .select('id');
-                scopedBranchIds = allBranches?.map(b => b.id) || [];
+                const allBranches = await this.prisma.branches.findMany({
+                  select: { id: true }
+                });
+                scopedBranchIds = allBranches.map(b => b.id);
               } catch (e) {
                 this.logger.warn('Could not resolve all branches for GM');
               }

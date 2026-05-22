@@ -54,7 +54,7 @@ export class ScopeGuard implements CanActivate {
       const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
       const routePath = request.route?.path || '';
       const treatIdAsBranch = /(?:branches?|locations?)/i.test(baseUrl) || /(?:branch|location|district)/i.test(routePath);
-      const explicitTargetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const explicitTargetBranchId = body?.branch_id || body?.branchId || request.params?.branchId || request.query?.branchId;
       const targetBranchId = explicitTargetBranchId || (treatIdAsBranch ? request.params?.id : undefined);
       if (targetBranchId && !scopedBranchIds.includes(targetBranchId)) {
         this.logger.warn(`[SCOPE DENIED] DM ${user.id} tried to access branch ${targetBranchId} outside district ${user.districtId}`);
@@ -80,7 +80,7 @@ export class ScopeGuard implements CanActivate {
       const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
       const routePath = request.route?.path || '';
       const treatIdAsBranch = /(?:branches?|locations?)/i.test(baseUrl) || /(?:branch|location|district)/i.test(routePath);
-      const explicitTargetBranchId = body?.branch_id || body?.location_id || body?.locationId || request.params?.branchId || request.params?.locationId || request.query?.branchId || request.query?.locationId;
+      const explicitTargetBranchId = body?.branch_id || body?.branchId || request.params?.branchId || request.query?.branchId;
       const targetBranchId = explicitTargetBranchId || (treatIdAsBranch ? request.params?.id : undefined);
       if (targetBranchId && targetBranchId !== user.branchId) {
         this.logger.warn(`[SCOPE DENIED] Staff ${user.id} tried to access branch ${targetBranchId}, assigned to ${user.branchId}`);

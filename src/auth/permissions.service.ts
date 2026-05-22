@@ -37,14 +37,14 @@ export class PermissionsService {
 
     // For Staff/DM, check branch scoping
     if (userRole === Role.STAFF || userRole === Role.DISTRICT_MANAGER) {
-       const { data: profile } = await client.from('profiles').select('location_id').eq('id', userId).single();
-       if (!profile?.location_id) return false;
+       const { data: profile } = await client.from('profiles').select('branch_id').eq('id', userId).single();
+       if (!profile?.branch_id) return false;
 
        // 1. Check Vehicle context
        const { data: convFull } = await client.from('conversations').select('vehicle_id').eq('id', conversationId).single();
        if (convFull?.vehicle_id) {
          const { data: vehicle } = await client.from('vehicles').select('branch_id').eq('id', convFull.vehicle_id).single();
-         if (vehicle?.branch_id === profile.location_id || !vehicle?.branch_id) return true; // allow access to global leads (no branch)
+         if (vehicle?.branch_id === profile.branch_id || !vehicle?.branch_id) return true; // allow access to global leads (no branch)
        }
        
        // 2. Fallback: If it's a global lead (no vehicle)
@@ -75,8 +75,8 @@ export class PermissionsService {
        return true;
     }
 
-    const { data: profile } = await client.from('profiles').select('location_id, district_id').eq('id', userId).single();
-    const userBranchId = profile?.location_id;
+    const { data: profile } = await client.from('profiles').select('branch_id, district_id').eq('id', userId).single();
+    const userBranchId = profile?.branch_id;
     const userDistrictId = profile?.district_id;
 
     if (userRole === Role.STAFF && userBranchId && lead.branch_id === userBranchId) {

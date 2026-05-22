@@ -23,9 +23,9 @@ export class PeopleController {
       
       if (branchId) {
         if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
-          query = query.eq('location_id', branchId);
+          query = query.eq('branch_id', branchId);
         } else if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.includes(branchId)) {
-          query = query.eq('location_id', branchId);
+          query = query.eq('branch_id', branchId);
         } else {
            return []; // Unauthorized for this branch
         }
@@ -35,7 +35,7 @@ export class PeopleController {
         // DM: sees staff across ALL branches in their district
         // FINANCE_AUDITOR: sees all (no branch scoping needed)
         if (req.user.role === Role.DISTRICT_MANAGER && req.user.scopedBranchIds?.length > 0) {
-          query = query.in('location_id', req.user.scopedBranchIds);
+          query = query.in('branch_id', req.user.scopedBranchIds);
         }
         // GM and FINANCE_AUDITOR see all — no filter applied
       }
@@ -87,7 +87,7 @@ export class PeopleController {
           full_name: data.fullName, 
           role: data.role, 
           phone_number: data.phone, 
-          location_id: data.locationId 
+          branch_id: data.locationId 
       }
     });
 
@@ -106,7 +106,7 @@ export class PeopleController {
       full_name: data.fullName,
       phone_number: data.phone,
       role: data.role,
-      location_id: data.locationId || null,
+      branch_id: data.locationId || null,
       district_id: districtId,
       commission_tier: data.commissionTier || 1.0,
       is_verified: true, // internal staff created by admin
@@ -136,8 +136,8 @@ export class PeopleController {
     // DM scope check: can only edit staff within their district
     if (req.user.role === Role.DISTRICT_MANAGER) {
       const { data: target } = await this.supabaseService.getClient()
-        .from('profiles').select('location_id').eq('id', id).single();
-      if (target?.location_id && !req.user.scopedBranchIds?.includes(target.location_id)) {
+        .from('profiles').select('branch_id').eq('id', id).single();
+      if (target?.branch_id && !req.user.scopedBranchIds?.includes(target.branch_id)) {
         return { success: false, message: 'Cannot edit staff outside your district.' };
       }
     }
@@ -154,7 +154,7 @@ export class PeopleController {
       full_name: data.fullName,
       phone_number: data.phone,
       role: data.role,
-      location_id: data.locationId,
+      branch_id: data.locationId,
       commission_tier: data.commissionTier,
       is_verified: data.isActive,
       date_of_birth: data.date_of_birth
@@ -180,8 +180,8 @@ export class PeopleController {
 
     // DM scope check
     if (req.user.role === Role.DISTRICT_MANAGER) {
-      const { data: target } = await client.from('profiles').select('location_id').eq('id', id).single();
-      if (target?.location_id && !req.user.scopedBranchIds?.includes(target.location_id)) {
+      const { data: target } = await client.from('profiles').select('branch_id').eq('id', id).single();
+      if (target?.branch_id && !req.user.scopedBranchIds?.includes(target.branch_id)) {
         return { success: false, message: 'Cannot toggle staff outside your district.' };
       }
     }

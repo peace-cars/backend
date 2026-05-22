@@ -39,7 +39,7 @@ export class CommissionWorkflowController {
     const client = this.supabaseService.getClient();
     let query = client
       .from('commissions')
-      .select('*, profiles!commissions_beneficiary_id_fkey(full_name, role, location_id)')
+      .select('*, profiles!commissions_beneficiary_id_fkey(full_name, role, branch_id)')
       .order('created_at', { ascending: false });
 
     if (branchId) {

@@ -65,10 +65,10 @@ export class StaffTasksService {
         .from('staff_tasks')
         .select(`
           *, 
-          assigned_to_profile:profiles!staff_tasks_assigned_to_fkey(full_name, location_id), 
+          assigned_to_profile:profiles!staff_tasks_assigned_to_fkey(full_name, branch_id), 
           trade_in_requests(vehicle_make_model, car_description, customer_id, profiles!trade_in_requests_customer_id_fkey(full_name))
         `)
-        .eq('assigned_to_profile.location_id', locationId);
+        .eq('assigned_to_profile.branch_id', locationId);
 
       if (error) {
         this.logger.error(`Error fetching branch tasks: ${error.message}`);
@@ -76,7 +76,7 @@ export class StaffTasksService {
       }
       
       // Post-filter because PostgREST nested filtering can be tricky if not perfectly configured
-      return (data || []).filter((t: any) => t.assigned_to_profile?.location_id === locationId);
+      return (data || []).filter((t: any) => t.assigned_to_profile?.branch_id === locationId);
     } catch (e) {
       this.logger.error(`Failed to fetch branch tasks: ${e.message}`);
       return [];

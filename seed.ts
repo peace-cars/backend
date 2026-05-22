@@ -65,11 +65,11 @@ async function seed() {
   const { error: profErr } = await supabase.from('profiles').upsert([
     { 
       id: dawitId, role: 'STAFF', full_name: 'Dawit Kebede', phone_number: '+251 900 1111', 
-      location_id: BOLE_ID, is_verified: true, is_inspector_verified: true, gamification_points: 340, performance_rating: 4.8, total_completed_tasks: 12
+      branch_id: BOLE_ID, is_verified: true, is_inspector_verified: true, gamification_points: 340, performance_rating: 4.8, total_completed_tasks: 12
     },
     { 
       id: salemId, role: 'STAFF', full_name: 'Salem Tesfaye', phone_number: '+251 900 2222', 
-      location_id: MEG_ID, is_verified: true, is_inspector_verified: false, gamification_points: 120, performance_rating: 4.2, total_completed_tasks: 5
+      branch_id: MEG_ID, is_verified: true, is_inspector_verified: false, gamification_points: 120, performance_rating: 4.2, total_completed_tasks: 5
     },
     {
       id: adminId, role: 'GENERAL_MANAGER', full_name: 'Admin Boss', phone_number: '+251 900 3333',
@@ -81,7 +81,7 @@ async function seed() {
     },
     {
       id: financeId, role: 'FINANCE_AUDITOR', full_name: 'Lydia Finance', phone_number: '+251 900 5555',
-      location_id: BOLE_ID, is_verified: true, performance_rating: 5.0, total_completed_tasks: 0
+      branch_id: BOLE_ID, is_verified: true, performance_rating: 5.0, total_completed_tasks: 0
     }
   ], { onConflict: 'id' });
   if (profErr) { console.error("Profile Error:", profErr); throw profErr; }
@@ -93,13 +93,13 @@ async function seed() {
       id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', // Required valid UUIDs
       vin_chassis: 'V-TOY-300-24-X291A', make: 'Toyota', model: 'Land Cruiser 300 VX', year: 2024,
       retail_price_etb: 24500000, total_landed_cost_etb: 18000000,
-      duty: 'DUTY_PAID', fuel: 'DIESEL', location_id: BOLE_ID, status: 'SHOWROOM'
+      duty: 'DUTY_PAID', fuel: 'DIESEL', branch_id: BOLE_ID, status: 'SHOWROOM'
     },
     {
        id: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
        vin_chassis: 'V-BYD-SONG-24-X91ZZ', make: 'BYD', model: 'Song Plus EV', year: 2024,
        retail_price_etb: 4500000, total_landed_cost_etb: 3900000,
-       duty: 'DUTY_FREE', fuel: 'ELECTRIC', battery_soh_percent: 100, location_id: MEG_ID, status: 'SHOWROOM'
+       duty: 'DUTY_FREE', fuel: 'ELECTRIC', battery_soh_percent: 100, branch_id: MEG_ID, status: 'SHOWROOM'
     }
   ], { onConflict: 'id' });
   if (vehErr) { console.error("Vehicle Error:", vehErr); throw vehErr; }
@@ -110,13 +110,13 @@ async function seed() {
     {
       id: 'a1111111-1111-1111-1111-111111111111', customer_id: customerId, vehicle_make_model: '2020 Hyundai Tucson',
       car_description: 'Code 3 - A 19022', user_asking_price_etb: 3600000,
-      target_vehicle_id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', location_id: BOLE_ID,
+      target_vehicle_id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', branch_id: BOLE_ID,
       assigned_staff_id: dawitId, status: 'NEW_LEAD'
     },
     {
       id: 'a2222222-2222-2222-2222-222222222222', customer_id: customerId, vehicle_make_model: '2019 Toyota Corolla',
       car_description: 'Code 2 - B 92833', user_asking_price_etb: 2200000,
-      target_vehicle_id: 'c56a4180-65aa-42ec-a945-5fd21dec0538', location_id: MEG_ID,
+      target_vehicle_id: 'c56a4180-65aa-42ec-a945-5fd21dec0538', branch_id: MEG_ID,
       assigned_staff_id: salemId, status: 'NEW_LEAD'
     }
   ], { onConflict: 'id' });

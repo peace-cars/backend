@@ -23,8 +23,8 @@ export class TradeInRequestsService {
         user_asking_price_etb, status, photos, financing_requested,
         vehicle_details, contact_phone, contact_city,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        locations(name, address),
-        location_id,
+        locations!trade_in_requests_branch_id_fkey(name, address),
+        branch_id,
         inspections(
           *,
           profiles:inspector_id(full_name, role)
@@ -53,9 +53,9 @@ export class TradeInRequestsService {
          );
       } else {
          // Fallback: scope by user's assigned branch
-         const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', userId).single();
-         if (profile?.location_id) {
-            query = query.or(`branch_id.eq.${profile.location_id},branch_id.is.null`);
+         const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', userId).single();
+         if (profile?.branch_id) {
+            query = query.or(`branch_id.eq.${profile.branch_id},branch_id.is.null`);
          } else {
             query = query.is('branch_id', null);
          }
@@ -87,7 +87,7 @@ export class TradeInRequestsService {
 
   async getAssignedLeads(userId: string) {
     const supabase = this.supabaseService.getClient();
-    const { data: profile } = await supabase.from('profiles').select('location_id').eq('id', userId).single();
+    const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', userId).single();
     if (!profile) throw new BadRequestException('Profile not found');
 
     const { data, error } = await supabase
@@ -96,9 +96,9 @@ export class TradeInRequestsService {
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        locations(name, address)
+        locations!trade_in_requests_branch_id_fkey(name, address)
       `)
-      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,branch_id.eq.${profile.location_id})`)
+      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,branch_id.eq.${profile.branch_id})`)
       .order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
@@ -140,7 +140,7 @@ export class TradeInRequestsService {
     // 2. Verify Inspector Privileges
     const { data: profile } = await admin
       .from('profiles')
-      .select('is_inspector_verified, location_id, role')
+      .select('is_inspector_verified, branch_id, role')
       .eq('id', userId)
       .single();
 
@@ -198,14 +198,22 @@ export class TradeInRequestsService {
     if (updError) throw new BadRequestException(updError.message);
 
     // Notify Manager (DM) if needed
-    if (riskFlag && profile?.location_id) {
-      await admin.from('notifications').insert({
-        recipient_id: profile.location_id, 
-        title: 'HIGH RISK EVALUATION',
-        message: `A vehicle at associated location was flagged: ${riskFlag}`,
-        type: 'INSPECTION_ALERT',
-        reference_id: leadId
-      });
+    if (riskFlag && profile?.branch_id) {
+      const { data: loc } = await admin
+        .from('locations')
+        .select('manager_id')
+        .eq('id', profile.branch_id)
+        .single();
+        
+      if (loc?.manager_id) {
+        await admin.from('notifications').insert({
+          recipient_id: loc.manager_id, 
+          title: 'HIGH RISK EVALUATION',
+          message: `A vehicle at associated location was flagged: ${riskFlag}`,
+          type: 'INSPECTION_ALERT',
+          reference_id: leadId
+        });
+      }
     }
 
     return { 
@@ -227,7 +235,7 @@ export class TradeInRequestsService {
       vehicle_make_model: vehicleMakeModel,
       car_description: carDescription,
       user_asking_price_etb: askingPrice,
-      location_id: locationId,
+      branch_id: locationId,
       status: 'NEW_LEAD',
       photos: photoArray,
       financing_requested: data.financingRequested || false,
@@ -378,9 +386,8 @@ export class TradeInRequestsService {
       .select(`
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
-        assigned_staff_id,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        branches(name, address),
+        locations!trade_in_requests_branch_id_fkey(name, address),
         branch_id
       `)
       .eq('id', leadId)
@@ -396,7 +403,7 @@ export class TradeInRequestsService {
       vehicle: castData.vehicle_make_model,
       plate: castData.car_description || 'Unknown',
       arrivedAt: castData.created_at,
-      location: castData.branches?.name || 'Local',
+      location: castData.locations?.name || 'Local',
       financing: castData.financing_requested,
       status: castData.status,
       photos: castData.photos,

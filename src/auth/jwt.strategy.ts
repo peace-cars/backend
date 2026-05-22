@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -11,6 +12,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
   ) {
     super({
       // We extract the token from the standard Authorization Header
@@ -29,16 +31,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     this.logger.debug(`Validating user session (UUID: ${payload.sub})`);
 
     // Fetch real profile from DB because seated users might have empty user_metadata
-    const { data: profile } = await this.supabaseService.getClient()
-      .from('profiles')
-      .select('role, location_id')
-      .eq('id', payload.sub)
-      .single();
+    const profile = await this.prisma.profiles.findUnique({
+      where: { id: payload.sub },
+      select: { role: true, branch_id: true },
+    });
     
     return { 
         userId: payload.sub, 
         role: profile?.role || payload.user_metadata?.role || 'USER', 
-        locationId: profile?.location_id || payload.user_metadata?.location_id || null 
+        branchId: profile?.branch_id || payload.user_metadata?.branch_id || null
     };
   }
 }
