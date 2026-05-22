@@ -19,7 +19,7 @@ export class PeopleController {
     try {
       let query = this.supabaseService.getClient()
         .from('profiles')
-        .select('*, locations(name)');
+        .select('*, branches(name)');
       
       if (branchId) {
         if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
@@ -53,7 +53,7 @@ export class PeopleController {
         ...p,
         fullName: p.full_name,
         phone: p.phone_number,
-        locationName: p.locations?.name || 'Unassigned',
+        locationName: p.branches?.name || 'Unassigned',
         isActive: p.is_verified
       }));
     } catch (e) {
@@ -96,7 +96,7 @@ export class PeopleController {
     // Resolve district_id from the target location
     let districtId = null;
     if (data.locationId) {
-      const { data: loc } = await client.from('locations').select('district_id').eq('id', data.locationId).single();
+      const { data: loc } = await client.from('branches').select('district_id').eq('id', data.locationId).single();
       districtId = loc?.district_id || null;
     }
 
@@ -146,7 +146,7 @@ export class PeopleController {
     let districtId = undefined;
     if (data.locationId) {
       const { data: loc } = await this.supabaseService.getClient()
-        .from('locations').select('district_id').eq('id', data.locationId).single();
+        .from('branches').select('district_id').eq('id', data.locationId).single();
       districtId = loc?.district_id || null;
     }
 

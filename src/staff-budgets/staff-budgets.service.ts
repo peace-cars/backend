@@ -42,7 +42,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!staff_budgets_requester_id_fkey(full_name, role, branch_id, locations(name))
+          profiles!staff_budgets_requester_id_fkey(full_name, role, branch_id, branches(name))
         `)
         .eq('profiles.branch_id', locationId);
 
@@ -62,7 +62,7 @@ export class StaffBudgetsService {
     try {
       const { data, error } = await this.supabaseService.getClient()
         .from('staff_budgets')
-        .select('*, profiles!staff_budgets_requester_id_fkey(full_name, role, locations(name))')
+        .select('*, profiles!staff_budgets_requester_id_fkey(full_name, role, branches(name))')
         .eq('requester_id', userId);
       
       if (error) {
@@ -82,7 +82,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!staff_budgets_requester_id_fkey(full_name, role, district_id, locations(name))
+          profiles!staff_budgets_requester_id_fkey(full_name, role, district_id, branches(name))
         `)
         .eq('profiles.district_id', districtId);
 
@@ -101,7 +101,7 @@ export class StaffBudgetsService {
     try {
       const { data, error } = await this.supabaseService.getClient()
         .from('staff_budgets')
-        .select('*, profiles!staff_budgets_requester_id_fkey(full_name, role, locations(name))');
+        .select('*, profiles!staff_budgets_requester_id_fkey(full_name, role, branches(name))');
       
       if (error) {
         this.logger.error(`Error fetching budgets: ${error.message}`);

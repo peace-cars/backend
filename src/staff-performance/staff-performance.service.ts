@@ -123,7 +123,7 @@ export class StaffPerformanceService {
         .select(`
           id, full_name, role, branch_id, is_verified, is_inspector_verified, 
           gamification_points, total_completed_tasks, performance_rating,
-          locations(name)
+          branches(name)
         `)
         .eq('is_verified', true)
         .order('full_name');
@@ -162,7 +162,7 @@ export class StaffPerformanceService {
 
         return {
           ...p,
-          locationName: p.locations?.name,
+          locationName: p.branches?.name,
           activeTasks: activeTasks || 0,
           pendingBudgets: pendingBudgets || 0,
           isOnline: !!shift,

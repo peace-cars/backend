@@ -23,7 +23,7 @@ export class TradeInRequestsService {
         user_asking_price_etb, status, photos, financing_requested,
         vehicle_details, contact_phone, contact_city,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        locations!trade_in_requests_branch_id_fkey(name, address),
+        branches!trade_in_requests_branch_id_fkey(name, address),
         branch_id,
         inspections(
           *,
@@ -72,8 +72,8 @@ export class TradeInRequestsService {
       vehicle: req.vehicle_make_model,
       plate: req.car_description || 'Unknown',
       arrivedAt: req.created_at,
-      location: req.locations?.name || 'Local',
-      locationAddress: req.locations?.address || '',
+      location: req.branches?.name || 'Local',
+      locationAddress: req.branches?.address || '',
       financing: req.financing_requested,
       status: req.status,
       photos: req.photos,
@@ -96,7 +96,7 @@ export class TradeInRequestsService {
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        locations!trade_in_requests_branch_id_fkey(name, address)
+        branches!trade_in_requests_branch_id_fkey(name, address)
       `)
       .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,branch_id.eq.${profile.branch_id})`)
       .order('created_at', { ascending: false });
@@ -110,7 +110,7 @@ export class TradeInRequestsService {
       vehicle: req.vehicle_make_model,
       plate: req.car_description || 'Unknown',
       arrivedAt: req.created_at,
-      location: req.locations?.name || 'Local',
+      location: req.branches?.name || 'Local',
       financing: req.financing_requested,
       status: req.status,
       photos: req.photos
@@ -387,7 +387,7 @@ export class TradeInRequestsService {
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        locations!trade_in_requests_branch_id_fkey(name, address),
+        branches!trade_in_requests_branch_id_fkey(name, address),
         branch_id
       `)
       .eq('id', leadId)
@@ -403,7 +403,7 @@ export class TradeInRequestsService {
       vehicle: castData.vehicle_make_model,
       plate: castData.car_description || 'Unknown',
       arrivedAt: castData.created_at,
-      location: castData.locations?.name || 'Local',
+      location: castData.branches?.name || 'Local',
       financing: castData.financing_requested,
       status: castData.status,
       photos: castData.photos,
