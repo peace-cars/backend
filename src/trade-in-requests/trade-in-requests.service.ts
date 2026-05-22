@@ -97,8 +97,11 @@ export class TradeInRequestsService {
         user_asking_price_etb, status, photos, financing_requested,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
         branches!trade_in_requests_branch_id_fkey(name, address)
-      `)
-      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,branch_id.eq.${profile.branch_id})`)
+      `);
+      
+    const branchCondition = profile.branch_id ? `branch_id.eq.${profile.branch_id}` : `branch_id.is.null`;
+    const { data, error } = await query
+      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,${branchCondition})`)
       .order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
