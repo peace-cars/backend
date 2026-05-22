@@ -19,7 +19,7 @@ export class PermissionsService {
     // Fetch the target conversation
     const { data: conv, error } = await client
       .from('conversations')
-      .select('customer_id')
+      .select('customer_id, assigned_staff_id')
       .eq('id', conversationId)
       .single();
 
@@ -28,8 +28,8 @@ export class PermissionsService {
       return false;
     }
 
-    // Customer or explicit owner
-    if (conv.customer_id === userId) {
+    // Customer or assigned staff or unclaimed (so staff can read and claim)
+    if (conv.customer_id === userId || conv.assigned_staff_id === userId || (!conv.assigned_staff_id && (userRole === Role.STAFF || userRole === Role.DISTRICT_MANAGER))) {
       return true;
     } else {
       console.warn(`[PermissionsService] Ownership mismatch. conv.customer_id=${conv.customer_id}, userId=${userId}`);

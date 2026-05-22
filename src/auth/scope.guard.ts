@@ -45,11 +45,6 @@ export class ScopeGuard implements CanActivate {
 
     // DISTRICT_MANAGER scope enforcement
     if (user.role === Role.DISTRICT_MANAGER) {
-      if (!user.districtId) {
-        this.logger.warn(`[SCOPE DENIED] DM ${user.id} has no assigned district.`);
-        throw new ForbiddenException('District Manager has no assigned district scope.');
-      }
-
       // If the request targets a specific branch, ensure it's within the DM's district
       const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
       const routePath = request.route?.path || '';
@@ -71,11 +66,6 @@ export class ScopeGuard implements CanActivate {
 
     // STAFF scope enforcement
     if (user.role === Role.STAFF) {
-      if (!user.branchId) {
-        this.logger.warn(`[SCOPE DENIED] Staff ${user.id} has no assigned branch.`);
-        throw new ForbiddenException('Staff member has no assigned branch scope.');
-      }
-
       // Staff can only operate within their own branch
       const baseUrl = request.baseUrl || request.originalUrl || request.url || '';
       const routePath = request.route?.path || '';
