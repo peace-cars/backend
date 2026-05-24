@@ -100,14 +100,14 @@ export class StorageService {
           const thumbPath = `${folder}/${thumbName}`;
           const { error: thumbErr } = await this.supabaseService.getClient().storage
             .from(bucket)
-            .upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true });
+            .upload(thumbPath, thumb.buffer.slice(thumb.byteOffset, thumb.byteOffset + thumb.byteLength) as ArrayBuffer, { contentType: 'image/webp', upsert: true });
           if (thumbErr) this.logger.warn(`Thumbnail upload failed: ${thumbErr.message}`);
 
           const webpName = `${baseName}.webp`;
           const webpPath = `${folder}/${webpName}`;
           const { data: webpData, error: webpErr } = await this.supabaseService.getClient().storage
             .from(bucket)
-            .upload(webpPath, optimized, { contentType: 'image/webp', upsert: true });
+            .upload(webpPath, optimized.buffer.slice(optimized.byteOffset, optimized.byteOffset + optimized.byteLength) as ArrayBuffer, { contentType: 'image/webp', upsert: true });
           if (!webpErr) {
             const { data: { publicUrl } } = this.supabaseService.getClient().storage.from(bucket).getPublicUrl(webpPath);
             this.logger.log(`Optimized upload successful: ${publicUrl}`);
@@ -120,12 +120,12 @@ export class StorageService {
       }
     }
 
-    // Retry up to 2 times for transient errors
+    // Retry up to 3 times for transient errors
     let lastError: any = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       const { data, error } = await client.storage
         .from(bucket)
-        .upload(filePath, mainBuffer, {
+        .upload(filePath, mainBuffer.buffer.slice(mainBuffer.byteOffset, mainBuffer.byteOffset + mainBuffer.byteLength) as ArrayBuffer, {
           contentType: mimeType,
           upsert: true,
         });
@@ -175,6 +175,7 @@ export class StorageService {
     const mimeType = this.normalizeMimeType(originalMimeType, fileExt);
 
     this.logger.debug(`Base64 uploading: ${filePath} (${mimeType}, ${(buffer.length / 1024).toFixed(1)}KB)`);
+    this.logger.debug(`[DEBUG] originalMimeType: ${originalMimeType}, fileExt: ${fileExt}, base64Prefix: ${base64Data.substring(0, 40)}`);
 
     // If sharp available and image, create optimized variants (webp) and thumbnail
     const isImage = mimeType.startsWith('image/') && sharp;
@@ -209,14 +210,17 @@ export class StorageService {
 
           const { data: webpData, error: webpErr } = await client.storage
             .from(bucket)
-            .upload(webpPath, optimized, { contentType: 'image/webp', upsert: true });
+            .upload(webpPath, optimized.buffer.slice(optimized.byteOffset, optimized.byteOffset + optimized.byteLength) as ArrayBuffer, { contentType: 'image/webp', upsert: true });
 
-          if (webpErr) {
-            this.logger.warn(`Optimized webp upload failed: ${webpErr.message}`);
-          } else {
-            const thumbName = `${baseName}-thumb.webp`;
-            const thumbPath = `${folder}/${thumbName}`;
-            const { error: thumbErr } = await client.storage.from(bucket).upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true });
+          if (!webpErr) {
+            const thumb = await sharp(buffer)
+              .rotate()
+              .resize({ width: 320, withoutEnlargement: true })
+              .toFormat('webp', { quality: 60 })
+              .toBuffer();
+            
+            const thumbPath = filePath.replace(/\.[^.]+$/, '-thumb.webp');
+            const { error: thumbErr } = await client.storage.from(bucket).upload(thumbPath, thumb.buffer.slice(thumb.byteOffset, thumb.byteOffset + thumb.byteLength) as ArrayBuffer, { contentType: 'image/webp', upsert: true });
             if (thumbErr) this.logger.warn(`Thumbnail upload failed: ${thumbErr.message}`);
 
             const { data: { publicUrl } } = client.storage.from(bucket).getPublicUrl(webpPath);
@@ -231,7 +235,7 @@ export class StorageService {
 
     const { data, error } = await client.storage
       .from(bucket)
-      .upload(filePath, buffer, {
+      .upload(filePath, buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer, {
         contentType: mimeType,
         upsert: true,
       });
