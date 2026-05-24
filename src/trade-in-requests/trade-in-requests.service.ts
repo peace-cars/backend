@@ -330,10 +330,15 @@ export class TradeInRequestsService {
       .select(`
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
+        vehicle_details, contact_phone, contact_city,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
         branches!trade_in_requests_branch_id_fkey(name, address),
         branch_id,
-        assigned_staff_id
+        assigned_staff_id,
+        inspections(
+          *,
+          profiles:inspector_id(full_name, role)
+        )
       `)
       .eq('id', leadId)
       .single();
@@ -344,16 +349,21 @@ export class TradeInRequestsService {
     return {
       id: castData.id,
       customer: castData.profiles?.full_name || 'Walk-in',
-      phone: castData.profiles?.phone_number || 'No contact',
+      phone: castData.contact_phone || castData.profiles?.phone_number || 'No contact',
       vehicle: castData.vehicle_make_model,
       plate: castData.car_description || 'Unknown',
       arrivedAt: castData.created_at,
       location: castData.branches?.name || 'Local',
+      locationAddress: castData.branches?.address || '',
       financing: castData.financing_requested,
       status: castData.status,
       photos: castData.photos,
       user_asking_price_etb: castData.user_asking_price_etb,
-      assigned_staff_id: castData.assigned_staff_id
+      assigned_staff_id: castData.assigned_staff_id,
+      vehicleDetails: castData.vehicle_details || {},
+      contactPhone: castData.contact_phone,
+      contactCity: castData.contact_city,
+      inspections: castData.inspections
     };
   }
 }
