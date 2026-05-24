@@ -9,21 +9,30 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse();
     const request = ctx.getRequest();
 
+    // Detect Postgrest/Supabase specific errors
+    const isPostgrestError = exception && typeof exception === 'object' && 'code' in exception && 'details' in exception;
+
     const status = 
       exception instanceof HttpException
         ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+        : isPostgrestError 
+          ? HttpStatus.INTERNAL_SERVER_ERROR 
+          : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message = 
+    let message = 
       exception instanceof HttpException
         ? exception.getResponse()
         : 'Internal server error';
 
+    if (isPostgrestError) {
+      message = 'Database operation failed.';
+    }
+
     // Log the actual error for debugging, but hide stack traces from the client
     if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `[${request.method}] ${request.url} - 500: ${(exception as any)?.message}`,
-        (exception as any)?.stack
+        `[${request.method}] ${request.url} - 500: ${JSON.stringify(exception)}`,
+        (exception as any)?.stack || ''
       );
     } else {
       this.logger.warn(`[${request.method}] ${request.url} - ${status}: ${JSON.stringify(message)}`);

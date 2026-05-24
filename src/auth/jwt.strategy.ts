@@ -3,7 +3,6 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -12,29 +11,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private supabaseService: SupabaseService,
-    private readonly prisma: PrismaService,
   ) {
     super({
-      // We extract the token from the standard Authorization Header
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // The Supabase JWT Secret guarantees the token integrity and authenticity
       secretOrKey: configService.get<string>('SUPABASE_JWT_SECRET') || 'fall-back-secret-never-use-in-prod-1234!!',
     });
   }
 
-  // The decrypted Supabase JWT matches this interface
   async validate(payload: any) {
     if (!payload) {
         throw new UnauthorizedException('Payload compromised.');
     }
     this.logger.debug(`Validating user session (UUID: ${payload.sub})`);
 
-    // Fetch real profile from DB because seated users might have empty user_metadata
-    const profile = await this.prisma.profiles.findUnique({
-      where: { id: payload.sub },
-      select: { role: true, branch_id: true },
-    });
+    const { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('role, branch_id')
+      .eq('id', payload.sub)
+      .maybeSingle();
     
     return { 
         userId: payload.sub, 

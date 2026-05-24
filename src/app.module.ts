@@ -30,7 +30,6 @@ import { StaffTasksModule } from './staff-tasks/staff-tasks.module';
 import { OfficialStampsModule } from './official-stamps/official-stamps.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { CustomOrdersModule } from './custom-orders/custom-orders.module';
-import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -41,7 +40,6 @@ import { PrismaModule } from './prisma/prisma.module';
       ttl: 60000,
       limit: 100, // 100 requests per minute
     }]),
-    PrismaModule,
     SupabaseModule,
     // Background queue and realtime
     QueueModule,

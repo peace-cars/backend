@@ -3,19 +3,22 @@ import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { Role } from '../auth/roles.enums';
 import { PermissionsService } from '../auth/permissions.service';
+import { EvaluationEngineService } from './evaluation-engine.service';
+import { AlertDispatcherService } from '../notifications/alert-dispatcher.service';
 
 @Injectable()
 export class TradeInRequestsService {
   constructor(
     private readonly supabaseService: SupabaseScopedService,
     private readonly adminSupabase: SupabaseService,
-    private readonly permissions: PermissionsService
+    private readonly permissions: PermissionsService,
+    private readonly evaluationEngine: EvaluationEngineService,
+    private readonly alertDispatcher: AlertDispatcherService
   ) {}
 
   async getAllLeads(userId: string, userRole: Role, scopedBranchIds?: string[], explicitBranchId?: string) {
-    // Use admin client to bypass RLS on inspections table
-    // Endpoint is already protected by RolesGuard + ScopeGuard; scoping is applied manually below
-    const supabase = this.adminSupabase.getClient();
+    // Utilize the RLS-scoped client so the database filters data implicitly based on JWT
+    const supabase = this.supabaseService.getClient();
     let query = supabase
       .from('trade_in_requests')
       .select(`
@@ -31,35 +34,10 @@ export class TradeInRequestsService {
         )
       `);
 
-    // If an explicit branch is requested by a GM/DM, filter to that branch.
-    // Ensure the branch requested is actually within their scope (or they are GM).
+    // If an explicit branch is requested, apply the explicit filter.
+    // RLS will ensure it fails/returns empty if the user isn't allowed to see that branch.
     if (explicitBranchId) {
-      if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
-        query = query.eq('branch_id', explicitBranchId);
-      } else if (scopedBranchIds && scopedBranchIds.includes(explicitBranchId)) {
-        query = query.eq('branch_id', explicitBranchId);
-      } else {
-        // If they requested a branch they don't have access to, return empty or default to their scope.
-        // We'll throw forbidden to be safe.
-        throw new ForbiddenException("You do not have access to this branch.");
-      }
-    } else {
-      if (userRole === Role.GENERAL_MANAGER || userRole === Role.FINANCE_AUDITOR) {
-         // Global view — no filter
-      } else if (scopedBranchIds && scopedBranchIds.length > 0) {
-         // Use hierarchy-aware scoping via scopedBranchIds
-         query = query.or(
-           scopedBranchIds.map(id => `branch_id.eq.${id}`).join(',') + ',branch_id.is.null'
-         );
-      } else {
-         // Fallback: scope by user's assigned branch
-         const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', userId).single();
-         if (profile?.branch_id) {
-            query = query.or(`branch_id.eq.${profile.branch_id},branch_id.is.null`);
-         } else {
-            query = query.is('branch_id', null);
-         }
-      }
+      query = query.eq('branch_id', explicitBranchId);
     }
 
     const { data, error } = await query.order('created_at', { ascending: false });
@@ -119,7 +97,6 @@ export class TradeInRequestsService {
   }
 
   async processInspectionUpload(userId: string, data: any) {
-    const supabase = this.supabaseService.getClient();
     const admin = this.adminSupabase.getClient();
     const { 
       leadId, 
@@ -131,14 +108,12 @@ export class TradeInRequestsService {
       final_notes
     } = data;
 
-    // 1. Fetch lead to check assignment
     const { data: lead } = await admin
       .from('trade_in_requests')
       .select('assigned_staff_id')
       .eq('id', leadId)
       .single();
 
-    // 2. Verify Inspector Privileges
     const { data: profile } = await admin
       .from('profiles')
       .select('is_inspector_verified, branch_id, role')
@@ -152,7 +127,6 @@ export class TradeInRequestsService {
       throw new ForbiddenException('ACCESS DENIED: You are not authorized or assigned to this evaluation.');
     }
 
-    // Insert Inspection Record
     const { error: insError } = await admin
       .from('inspections')
       .insert({
@@ -162,7 +136,7 @@ export class TradeInRequestsService {
         exterior_score,
         interior_score,
         checklist: checklist || {},
-        detailed_photos: [], // Placeholder for future media handling
+        detailed_photos: [],
         ev_data: ev_data || {},
         final_notes: final_notes || '',
         is_certified: true
@@ -170,23 +144,14 @@ export class TradeInRequestsService {
       
     if (insError) throw new BadRequestException(insError.message);
 
-    // 4. Mark Task as COMPLETED if exists
     await admin
       .from('staff_tasks')
       .update({ status: 'COMPLETED', completed_at: new Date() })
       .eq('trade_in_id', leadId)
       .eq('assigned_to', userId);
 
-    // AI Pricing / Risk Guardian Logic
-    const averageScore = (mechanical_score + exterior_score + interior_score) / 3;
-    let riskFlag = null;
+    const riskFlag = this.evaluationEngine.evaluateRisk(mechanical_score, exterior_score, interior_score);
     let newStatus = 'MANAGER_REVIEW';
-
-    if (averageScore < 40) {
-      riskFlag = 'HIGH_RISK_REJECTION_RECOMMENDED';
-    } else if (mechanical_score < 50) {
-      riskFlag = 'POWERTRAIN_WARNING';
-    }
 
     const { error: updError } = await admin
       .from('trade_in_requests')
@@ -198,23 +163,8 @@ export class TradeInRequestsService {
 
     if (updError) throw new BadRequestException(updError.message);
 
-    // Notify Manager (DM) if needed
     if (riskFlag && profile?.branch_id) {
-      const { data: loc } = await admin
-        .from('locations')
-        .select('manager_id')
-        .eq('id', profile.branch_id)
-        .single();
-        
-      if (loc?.manager_id) {
-        await admin.from('notifications').insert({
-          recipient_id: loc.manager_id, 
-          title: 'HIGH RISK EVALUATION',
-          message: `A vehicle at associated location was flagged: ${riskFlag}`,
-          type: 'INSPECTION_ALERT',
-          reference_id: leadId
-        });
-      }
+      await this.alertDispatcher.dispatchInspectionAlert(profile.branch_id, riskFlag, leadId);
     }
 
     return { 
@@ -230,7 +180,6 @@ export class TradeInRequestsService {
     
     const photoArray = Array.isArray(photos) ? photos : [];
 
-    // Build the insert payload with optional rich vehicle details
     const insertPayload: any = {
       customer_id: authUserId,
       vehicle_make_model: vehicleMakeModel,
@@ -242,12 +191,10 @@ export class TradeInRequestsService {
       financing_requested: data.financingRequested || false,
     };
 
-    // Add structured vehicle details if provided (Country Standard form)
     if (data.vehicleDetails && typeof data.vehicleDetails === 'object') {
       insertPayload.vehicle_details = data.vehicleDetails;
     }
 
-    // Add contact info if provided
     if (data.contactPhone) {
       insertPayload.contact_phone = data.contactPhone;
     }
@@ -266,8 +213,8 @@ export class TradeInRequestsService {
   }
 
   async getCustomerLeads(userId: string, customerId: string) {
-    const admin = this.adminSupabase.getClient();
-    const { data, error } = await admin
+    const supabase = this.supabaseService.getClient(); // Ensure RLS scoping here too
+    const { data, error } = await supabase
       .from('trade_in_requests')
       .select(`
         *,
@@ -291,8 +238,8 @@ export class TradeInRequestsService {
       }
     }
 
-    const admin = this.adminSupabase.getClient();
-    const { data, error } = await admin
+    const supabase = this.supabaseService.getClient();
+    const { data, error } = await supabase
       .from('trade_in_requests')
       .update({ status })
       .eq('id', leadId)
@@ -304,10 +251,9 @@ export class TradeInRequestsService {
   }
 
   async approveLead(leadId: string, offerPrice: number, notes?: string, callerRole?: Role) {
-    const admin = this.adminSupabase.getClient();
+    const supabase = this.supabaseService.getClient(); // Used RLS client instead of admin
 
-    // Validate lead exists and is in an approvable state
-    const { data: existing, error: fetchError } = await admin
+    const { data: existing, error: fetchError } = await supabase
       .from('trade_in_requests')
       .select('status')
       .eq('id', leadId)
@@ -324,7 +270,6 @@ export class TradeInRequestsService {
       );
     }
 
-    // Write to the correct notes column based on the caller's role
     const isGM = callerRole === Role.GENERAL_MANAGER;
     const notesPayload: Record<string, any> = {
       status: 'OFFER_MADE',
@@ -337,7 +282,7 @@ export class TradeInRequestsService {
       notesPayload.dm_notes = notes || 'Valuation approved by District Manager.';
     }
 
-    const { data, error } = await admin
+    const { data, error } = await supabase
       .from('trade_in_requests')
       .update(notesPayload)
       .eq('id', leadId)
@@ -349,9 +294,8 @@ export class TradeInRequestsService {
   }
 
   async rejectLead(leadId: string, reason: string, callerRole?: Role) {
-    const admin = this.adminSupabase.getClient();
+    const supabase = this.supabaseService.getClient();
 
-    // Write to the correct notes column based on the caller's role
     const isGM = callerRole === Role.GENERAL_MANAGER;
     const notesPayload: Record<string, any> = {
       status: 'REJECTED',
@@ -363,7 +307,7 @@ export class TradeInRequestsService {
       notesPayload.dm_notes = reason || 'Asset did not meet registry standards.';
     }
 
-    const { data, error } = await admin
+    const { data, error } = await supabase
       .from('trade_in_requests')
       .update(notesPayload)
       .eq('id', leadId)
@@ -375,7 +319,6 @@ export class TradeInRequestsService {
   }
 
   async getLeadById(userId: string, userRole: Role, leadId: string) {
-    // Ownership/Access check
     const hasAccess = await this.permissions.canAccessTradeIn(userId, userRole, leadId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have permission to view this trade-in lead.');
@@ -389,7 +332,8 @@ export class TradeInRequestsService {
         user_asking_price_etb, status, photos, financing_requested,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
         branches!trade_in_requests_branch_id_fkey(name, address),
-        branch_id
+        branch_id,
+        assigned_staff_id
       `)
       .eq('id', leadId)
       .single();

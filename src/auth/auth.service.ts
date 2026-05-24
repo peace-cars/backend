@@ -3,7 +3,6 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { createClient } from '@supabase/supabase-js';
 import { ConfigService } from '@nestjs/config';
 import { Role } from './roles.enums';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
@@ -12,7 +11,6 @@ export class AuthService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private configService: ConfigService,
-    private readonly prisma: PrismaService,
   ) {}
 
   async login(email: string, password: string) {
@@ -32,20 +30,11 @@ export class AuthService {
       throw new UnauthorizedException(authError?.message || 'Invalid credentials');
     }
 
-    // Fetch the real profile - NO MORE GHOST REPAIR ON LOGIN
-    const profile = await this.prisma.profiles.findUnique({
-      where: { id: authData.user.id },
-      select: {
-        id: true,
-        role: true,
-        full_name: true,
-        phone_number: true,
-        branch_id: true,
-        is_verified: true,
-        is_inspector_verified: true,
-        gamification_points: true,
-      },
-    });
+    const { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+      .eq('id', authData.user.id)
+      .maybeSingle();
 
     if (!profile) {
       this.logger.error(`Security Incident: User ${authData.user.id} logged in but has no profile record.`);
@@ -68,24 +57,25 @@ export class AuthService {
   }
 
   async repairProfile(user: any) {
-    const existing = await this.prisma.profiles.findUnique({
-      where: { id: user.id },
-      select: { id: true },
-    });
+    const { data: existing } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
     if (existing) return;
 
     this.logger.warn(`Ghost User detected: Repairing profile for ${user.id} (${user.email})`);
 
     const finalRole = user.user_metadata?.role || 'STAFF';
     
-    // Always generate a unique phone from UUID to avoid conflicts during repair
     const uuidDigits = user.id.replace(/[^0-9a-f]/g, '').slice(0, 9);
     const uniquePhone = `09${uuidDigits}`;
 
-    const roleRecord = await this.prisma.roles.findUnique({
-      where: { name: finalRole },
-      select: { id: true },
-    });
+    const { data: roleRecord } = await this.supabaseService.getClient()
+      .from('roles')
+      .select('id')
+      .eq('name', finalRole)
+      .maybeSingle();
 
     const profileData = {
       id: user.id,
@@ -99,29 +89,26 @@ export class AuthService {
       branch_id: user.user_metadata?.branch_id || null,
     };
 
-    try {
-      await this.prisma.profiles.upsert({
-        where: { id: user.id },
-        update: profileData,
-        create: profileData,
-      });
-      this.logger.log(`Repair outcome: Profile restored for ${user.id}`);
-    } catch (error: any) {
-      if (error.code === 'P2002' && error.meta?.target?.includes('phone_number')) {
+    const { error } = await this.supabaseService.getClient()
+      .from('profiles')
+      .upsert(profileData);
+
+    if (error) {
+      if (error.code === '23505' && error.message.includes('phone_number')) {
         this.logger.warn(`Phone collision for ${user.id} - retrying with null phone...`);
-        try {
-          await this.prisma.profiles.upsert({
-            where: { id: user.id },
-            update: { ...profileData, phone_number: null },
-            create: { ...profileData, phone_number: null },
-          });
-          this.logger.log(`Repair success (with null phone) for ${user.id}`);
-        } catch (retryError: any) {
+        const { error: retryError } = await this.supabaseService.getClient()
+          .from('profiles')
+          .upsert({ ...profileData, phone_number: null });
+        if (retryError) {
           this.logger.error(`Critical repair failure for ${user.id}: ${retryError.message}`);
+        } else {
+          this.logger.log(`Repair success (with null phone) for ${user.id}`);
         }
       } else {
         this.logger.error(`Repair failed for ${user.id}: ${error.message}`);
       }
+    } else {
+      this.logger.log(`Repair outcome: Profile restored for ${user.id}`);
     }
   }
 
@@ -132,19 +119,16 @@ export class AuthService {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // RESTRICT: Added admin roles as per user request for setup
     const safeRoles = [Role.USER, Role.BROKER, Role.GENERAL_MANAGER, Role.DISTRICT_MANAGER, Role.STAFF];
     if (!safeRoles.includes(role)) {
       this.logger.warn(`Unauthorized role request: ${email} tried to register as ${role}`);
       throw new ForbiddenException('Unauthorized role assignment.');
     }
 
-    // Normalize inputs
     const finalFullName = fullName || 'New Partner';
     const finalPhoneNumber = phoneNumber || null;
     const finalAvatarUrl = avatarUrl || null;
 
-    // 1. Create Auth user
     const { data: authData, error: authError } = await authClient.auth.signUp({
       email,
       password,
@@ -163,19 +147,18 @@ export class AuthService {
       throw new BadRequestException(authError?.message || 'Registration failed');
     }
 
-    // 2. Fetch the Formal Role ID
-    const roleRecord = await this.prisma.roles.findUnique({
-      where: { name: role },
-      select: { id: true },
-    });
+    const { data: roleRecord } = await this.supabaseService.getClient()
+      .from('roles')
+      .select('id')
+      .eq('name', role)
+      .maybeSingle();
 
-    // 3. Create/Update profile record
     const profileData: any = {
       id: authData.user.id,
       full_name: finalFullName,
       phone_number: finalPhoneNumber,
       role: role,
-      role_id: roleRecord?.id || null, // Formal link for permissions system
+      role_id: roleRecord?.id || null,
       is_verified: true, 
       is_inspector_verified: false,
       gamification_points: 0,
@@ -183,13 +166,11 @@ export class AuthService {
       avatar_url: finalAvatarUrl,
     };
 
-    try {
-      await this.prisma.profiles.upsert({
-        where: { id: authData.user.id },
-        update: profileData,
-        create: profileData,
-      });
-    } catch (profileError: any) {
+    const { error: profileError } = await this.supabaseService.getClient()
+      .from('profiles')
+      .upsert(profileData);
+
+    if (profileError) {
       this.logger.error(`Profile creation failed: ${profileError.message}`);
       throw new BadRequestException(`Profile initialization failed: ${profileError.message}`);
     }
@@ -212,19 +193,11 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const profile = await this.prisma.profiles.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        role: true,
-        full_name: true,
-        phone_number: true,
-        branch_id: true,
-        is_verified: true,
-        is_inspector_verified: true,
-        gamification_points: true,
-      },
-    });
+    const { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+      .eq('id', userId)
+      .maybeSingle();
 
     if (!profile) {
       throw new UnauthorizedException('Profile not found');

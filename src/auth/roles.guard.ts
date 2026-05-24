@@ -5,7 +5,6 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from './auth.service';
 import { Role } from './roles.enums';
 import { PERMISSIONS_KEY } from './permissions.decorator';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -17,7 +16,6 @@ export class RolesGuard implements CanActivate {
     private supabaseService: SupabaseService,
     @Inject(forwardRef(() => AuthService))
     private authService: AuthService,
-    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -46,7 +44,6 @@ export class RolesGuard implements CanActivate {
         const token = authHeader.split(' ')[1];
         
         try {
-          // Check simple memory cache first (TTL 60s)
           const now = Date.now();
           const cacheKey = `auth_${token}`;
           const cached = (global as any).__rolesCache?.get(cacheKey);
@@ -58,23 +55,19 @@ export class RolesGuard implements CanActivate {
             const { data: { user }, error } = await this.supabaseService.getClient().auth.getUser(token);
             if (error || !user) throw new UnauthorizedException('Invalid JWT Token.');
 
-            // Fetch Deep Profile with Roles, Permissions, AND Location→District hierarchy
-            const profile = await this.prisma.profiles.findUnique({
-              where: { id: user.id },
-              include: {
-                roles: {
-                  include: {
-                    permissions: {
-                      include: {
-                        permission: {
-                          select: { slug: true }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            });
+            const { data: profile } = await this.supabaseService.getClient()
+              .from('profiles')
+              .select(`
+                *,
+                roles (
+                  name,
+                  role_permissions (
+                    permissions ( slug )
+                  )
+                )
+              `)
+              .eq('id', user.id)
+              .maybeSingle();
             
             if (!profile) {
               this.logger.error(`Profile not found for user ${user.id}`);
@@ -84,73 +77,78 @@ export class RolesGuard implements CanActivate {
             const profileData = profile;
             const roleData = profileData.roles;
             const roleName = roleData?.name || profileData?.role || Role.USER;
-            const permissions = roleData?.permissions?.map((rp: any) => rp.permission?.slug).filter(Boolean) || [];
             
-            // Resolve hierarchy: branchId from branch_id, districtId from profile or location's district
+            let permissions: string[] = [];
+            if (roleData && roleData.role_permissions) {
+              permissions = roleData.role_permissions
+                .map((rp: any) => rp.permissions?.slug)
+                .filter(Boolean);
+            }
+            
             let resolvedDistrictId = profileData.district_id || null;
             const resolvedBranchId = profileData.branch_id || null;
 
-            // If profile doesn't have district_id directly, derive it from the branch/location
             if (!resolvedDistrictId && resolvedBranchId) {
               try {
-                const branchData = await this.prisma.branches.findUnique({
-                  where: { id: resolvedBranchId },
-                  select: { district_id: true }
-                });
+                const { data: branchData } = await this.supabaseService.getClient()
+                  .from('branches')
+                  .select('district_id')
+                  .eq('id', resolvedBranchId)
+                  .maybeSingle();
                 resolvedDistrictId = branchData?.district_id || null;
               } catch (e) {
                 this.logger.warn(`Could not resolve district for branch ${resolvedBranchId}`);
               }
             }
 
-            // For DMs, also resolve all branch IDs within their district (for downstream scoping)
             let scopedBranchIds: string[] = [];
             if (roleName === Role.DISTRICT_MANAGER && resolvedDistrictId) {
               try {
-                const districtBranches = await this.prisma.branches.findMany({
-                  where: { district_id: resolvedDistrictId },
-                  select: { id: true }
-                });
-                scopedBranchIds = districtBranches.map(b => b.id);
+                const { data: districtBranches } = await this.supabaseService.getClient()
+                  .from('branches')
+                  .select('id')
+                  .eq('district_id', resolvedDistrictId);
+                if (districtBranches) {
+                  scopedBranchIds = districtBranches.map((b: any) => b.id);
+                }
               } catch (e) {
                 this.logger.warn(`Could not resolve branches for district ${resolvedDistrictId}`);
               }
             }
 
-            // For GMs, get ALL branch IDs (global scope)
             if (roleName === Role.GENERAL_MANAGER) {
               try {
-                const allBranches = await this.prisma.branches.findMany({
-                  select: { id: true }
-                });
-                scopedBranchIds = allBranches.map(b => b.id);
+                const { data: allBranches } = await this.supabaseService.getClient()
+                  .from('branches')
+                  .select('id');
+                if (allBranches) {
+                  scopedBranchIds = allBranches.map((b: any) => b.id);
+                }
               } catch (e) {
                 this.logger.warn('Could not resolve all branches for GM');
               }
             }
 
-            // For Staff, scope is just their own branch
             if (roleName === Role.STAFF && resolvedBranchId) {
               scopedBranchIds = [resolvedBranchId];
             }
 
             userData = { 
               id: user.id,
-              userId: user.id, // For legacy controller compatibility
+              userId: user.id,
               email: user.email, 
               role: roleName, 
               fullName: profileData.full_name,
               phoneNumber: profileData.phone_number,
               branchId: resolvedBranchId,
               districtId: resolvedDistrictId,
-              locationId: resolvedBranchId, // Legacy compat
+              locationId: resolvedBranchId,
               isVerified: profileData?.is_verified,
               gamificationPoints: profileData?.gamification_points,
               permissions: permissions,
-              scopedBranchIds: scopedBranchIds, // Array of branch IDs this user can access
+              scopedBranchIds: scopedBranchIds,
             };
             
-            // Set Cache
             if (!(global as any).__rolesCache) {
               (global as any).__rolesCache = new Map();
             }
@@ -163,22 +161,20 @@ export class RolesGuard implements CanActivate {
           throw new UnauthorizedException('Authentication failed.');
         }
     } else {
-        // Fallback for Mock Auth (Prototyping)
         userData = { 
           id: 'mock-id',
           role: request.headers['x-user-role'] || Role.USER,
           permissions: [],
           branchId: request.headers['x-user-branch-id'],
           districtId: request.headers['x-user-district-id'],
-          locationId: request.headers['x-user-branch-id'], // Legacy compat
+          locationId: request.headers['x-user-branch-id'],
           scopedBranchIds: request.headers['x-user-scoped-branches'] 
-            ? request.headers['x-user-scoped-branches'].split(',') 
+            ? (request.headers['x-user-scoped-branches'] as string).split(',') 
             : [],
         };
         request.user = userData;
     }
 
-    // 1. Validate Roles (if any)
     if (requiredRoles) {
       const hasRole = requiredRoles.includes(userData.role);
       if (!hasRole) {
@@ -187,9 +183,7 @@ export class RolesGuard implements CanActivate {
       }
     }
 
-    // 2. Validate Permissions (if any)
     if (requiredPermissions) {
-      // General Manager has all permissions by default
       if (userData.role === Role.GENERAL_MANAGER) {
         return true;
       }
