@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { Role } from '../auth/roles.enums';
@@ -8,6 +8,8 @@ import { AlertDispatcherService } from '../notifications/alert-dispatcher.servic
 
 @Injectable()
 export class TradeInRequestsService {
+  private readonly logger = new Logger(TradeInRequestsService.name);
+
   constructor(
     private readonly supabaseService: SupabaseScopedService,
     private readonly adminSupabase: SupabaseService,
@@ -68,32 +70,52 @@ export class TradeInRequestsService {
     const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', userId).single();
     if (!profile) throw new BadRequestException('Profile not found');
 
-    const branchCondition = profile.branch_id ? `branch_id.eq.${profile.branch_id}` : `branch_id.is.null`;
+    this.logger.debug(`getAssignedLeads: userId=${userId}, branch_id=${profile.branch_id}`);
+
+    // Get assigned leads with complete details for staff vehicle inspection
     const { data, error } = await supabase
       .from('trade_in_requests')
       .select(`
         id, created_at, vehicle_make_model, car_description,
         user_asking_price_etb, status, photos, financing_requested,
+        vehicle_details, contact_phone, contact_city, branch_id,
         profiles!trade_in_requests_customer_id_fkey(full_name, phone_number),
-        branches!trade_in_requests_branch_id_fkey(name, address)
+        branches!trade_in_requests_branch_id_fkey(name, address),
+        inspections(
+          *,
+          profiles:inspector_id(full_name, role)
+        )
       `)
-      .or(`assigned_staff_id.eq.${userId},and(status.eq.NEW_LEAD,${branchCondition})`)
+      .eq('assigned_staff_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) {
+      this.logger.error(`Error fetching assigned leads: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
 
-    return data.map((req: any) => ({
+    const result = (data || []).map((req: any) => ({
       id: req.id,
       customer: req.profiles?.full_name || 'Walk-in',
-      phone: req.profiles?.phone_number || 'No contact',
+      phone: req.contact_phone || req.profiles?.phone_number || 'No contact',
       vehicle: req.vehicle_make_model,
       plate: req.car_description || 'Unknown',
       arrivedAt: req.created_at,
       location: req.branches?.name || 'Local',
+      locationAddress: req.branches?.address || '',
       financing: req.financing_requested,
       status: req.status,
-      photos: req.photos
+      photos: req.photos,
+      askingPrice: req.user_asking_price_etb,
+      vehicleDetails: req.vehicle_details || {},
+      contactPhone: req.contact_phone,
+      contactCity: req.contact_city,
+      branchId: req.branch_id,
+      inspections: req.inspections || []
     }));
+
+    this.logger.debug(`getAssignedLeads: returned ${result.length} leads for staff`);
+    return result;
   }
 
   async processInspectionUpload(userId: string, data: any) {

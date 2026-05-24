@@ -155,6 +155,8 @@ export class StorageService {
     const client = this.supabaseService.getClient();
 
     // Clean up base64 prefix if present (e.g., "data:image/jpeg;base64,...")
+    const base64Match = base64Data.match(/^data:([^;]+);base64,/);
+    const originalMimeType = base64Match ? base64Match[1] : 'image/jpeg';
     const base64Clean = base64Data.replace(/^data:[^;]+;base64,/, '');
     const buffer = Buffer.from(base64Clean, 'base64');
 
@@ -163,13 +165,14 @@ export class StorageService {
     }
 
     if (buffer.length > 10 * 1024 * 1024) {
-      throw new BadRequestException('Decoded file exceeds 10MB limit.');
+      throw new BadRequestException(`Decoded file exceeds 10MB limit. File size: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
     }
 
     const fileExt = filename.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = this.generateFileName(filename);
     const filePath = `${folder}/${fileName}`;
-    const mimeType = this.normalizeMimeType('image/jpeg', fileExt);
+    // Use extracted MIME type from base64 data, fall back to normalized extension
+    const mimeType = this.normalizeMimeType(originalMimeType, fileExt);
 
     this.logger.debug(`Base64 uploading: ${filePath} (${mimeType}, ${(buffer.length / 1024).toFixed(1)}KB)`);
 
