@@ -396,6 +396,7 @@ export class TradeInRequestsService {
       photos: castData.photos,
       user_asking_price_etb: castData.user_asking_price_etb,
       assigned_staff_id: castData.assigned_staff_id,
+      branch_id: castData.branch_id,
       vehicleDetails: castData.vehicle_details || {},
       contactPhone: castData.contact_phone,
       contactCity: castData.contact_city,
