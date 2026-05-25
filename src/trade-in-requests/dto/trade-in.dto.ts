@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsUUID, IsBoolean, IsEnum } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsUUID, IsBoolean, IsEnum, IsObject } from 'class-validator';
 
 export class CreateTradeInDto {
   @IsString()
@@ -23,6 +23,7 @@ export class CreateTradeInDto {
   financingRequested?: boolean;
 
   @IsOptional()
+  @IsObject()
   vehicleDetails?: any;
 
   @IsOptional()

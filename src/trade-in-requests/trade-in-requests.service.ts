@@ -73,7 +73,7 @@ export class TradeInRequestsService {
     this.logger.debug(`getAssignedLeads: userId=${userId}, branch_id=${profile.branch_id}`);
 
     // Get assigned leads with complete details for staff vehicle inspection
-    const { data, error } = await supabase
+    let query = supabase
       .from('trade_in_requests')
       .select(`
         id, created_at, vehicle_make_model, car_description,
@@ -86,8 +86,15 @@ export class TradeInRequestsService {
           profiles:inspector_id(full_name, role)
         )
       `)
-      .eq('assigned_staff_id', userId)
       .order('created_at', { ascending: false });
+
+    if (profile.branch_id) {
+      query = query.or(`assigned_staff_id.eq.${userId},branch_id.eq.${profile.branch_id}`);
+    } else {
+      query = query.eq('assigned_staff_id', userId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       this.logger.error(`Error fetching assigned leads: ${error.message}`);
