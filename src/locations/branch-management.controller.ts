@@ -36,7 +36,7 @@ export class BranchManagementController {
   @Get()
   async getAll(@Req() req: any) {
     const client = this.supabaseService.getClient();
-    let query = client.from('branches').select('*');
+    let query = client.from('branches').select('id, name, address, district_id');
 
     // Hierarchy Scoping
     if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
@@ -47,50 +47,39 @@ export class BranchManagementController {
        return [];
     }
 
-    const { data: locations, error } = await query.order('name');
+    const { data: branches, error } = await query.order('name');
 
     if (error) {
-      this.logger.warn(`Locations fetch failed: ${error.message}`);
+      this.logger.warn(`Branches fetch failed: ${error.message}`);
       throw new Error(error.message);
     }
 
-    const managerIds = locations.map(l => l.manager_id).filter(Boolean);
-    
-    let managersData: any[] = [];
-    if (managerIds.length > 0) {
-      const { data: managers } = await client
-        .from('profiles')
-        .select('id, full_name, phone_number, role')
-        .in('id', managerIds);
-      managersData = managers || [];
-    }
+    const branchIds = (branches || []).map(b => b.id);
 
-    // Map managers back to locations
-    const data = locations.map(loc => {
-      const manager = managersData.find(m => m.id === loc.manager_id);
-      return { ...loc, manager: manager || null };
-    });
-
-    // Enrich with staff counts per branch
+    // Find DMs assigned to each branch via profiles.branch_id
     const { data: profiles } = await client
       .from('profiles')
-      .select('branch_id, role');
+      .select('id, full_name, phone_number, role, branch_id, is_verified, commission_tier')
+      .in('branch_id', branchIds.length > 0 ? branchIds : ['__none__']);
 
     const staffCounts: Record<string, number> = {};
-    if (profiles) {
-      for (const p of profiles) {
-        if (p.branch_id) {
-          staffCounts[p.branch_id] = (staffCounts[p.branch_id] || 0) + 1;
+    const branchManagers: Record<string, any> = {};
+
+    for (const p of profiles || []) {
+      if (p.branch_id) {
+        staffCounts[p.branch_id] = (staffCounts[p.branch_id] || 0) + 1;
+        if (p.role === Role.DISTRICT_MANAGER) {
+          branchManagers[p.branch_id] = p;
         }
       }
     }
 
-    return (data || []).map(loc => ({
-      ...loc,
-      managerName: loc.manager?.full_name || null,
-      managerPhone: loc.manager?.phone_number || null,
-      managerId: loc.manager_id || null,
-      staffCount: staffCounts[loc.id] || 0,
+    return (branches || []).map(b => ({
+      ...b,
+      managerId: branchManagers[b.id]?.id || null,
+      managerName: branchManagers[b.id]?.full_name || null,
+      managerPhone: branchManagers[b.id]?.phone_number || null,
+      staffCount: staffCounts[b.id] || 0,
     }));
   }
 
@@ -152,15 +141,14 @@ export class BranchManagementController {
   @Post()
   @Roles(Role.GENERAL_MANAGER)
   async create(@Body() data: any) {
+    // Only insert columns that exist on the branches table
+    const insertData: any = { name: data.name };
+    if (data.address) insertData.address = data.address;
+    if (data.district_id) insertData.district_id = data.district_id;
+
     const { data: newBranch, error } = await this.supabaseService.getClient()
       .from('branches')
-      .insert([{ 
-         name: data.name, 
-         code: data.code, 
-         address: data.address, 
-         phone_number: data.phone,
-         is_active: true
-      }])
+      .insert([insertData])
       .select()
       .single();
     if (error) return { success: false, message: error.message };
@@ -187,27 +175,22 @@ export class BranchManagementController {
       return { success: false, message: 'Only District Managers can be assigned to manage a branch' };
     }
 
-    // Remove this DM from any other branch they currently manage
+    // Unassign any existing DM from this branch (clear their branch_id if they are a DM of this branch)
     await client
-      .from('branches')
-      .update({ manager_id: null })
-      .eq('manager_id', body.managerId);
+      .from('profiles')
+      .update({ branch_id: null })
+      .eq('branch_id', branchId)
+      .eq('role', Role.DISTRICT_MANAGER);
 
-    // Assign the DM to this branch
+    // Assign new DM: set their branch_id to this branch
     const { error: updateError } = await client
-      .from('branches')
-      .update({ manager_id: body.managerId })
-      .eq('id', branchId);
+      .from('profiles')
+      .update({ branch_id: branchId })
+      .eq('id', body.managerId);
 
     if (updateError) {
       return { success: false, message: updateError.message };
     }
-
-    // Also update the DM's own branch_id to match their branch
-    await client
-      .from('profiles')
-      .update({ branch_id: branchId })
-      .eq('id', body.managerId);
 
     this.logger.log(`Assigned DM ${person.full_name} to branch ${branchId}`);
     return { success: true, managerName: person.full_name };
@@ -218,10 +201,12 @@ export class BranchManagementController {
   async unassignManager(@Param('id') branchId: string) {
     const client = this.supabaseService.getClient();
     
+    // Clear branch_id for any DM currently assigned to this branch
     const { error } = await client
-      .from('branches')
-      .update({ manager_id: null })
-      .eq('id', branchId);
+      .from('profiles')
+      .update({ branch_id: null })
+      .eq('branch_id', branchId)
+      .eq('role', Role.DISTRICT_MANAGER);
 
     if (error) return { success: false, message: error.message };
     return { success: true };
