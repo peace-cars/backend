@@ -18,11 +18,18 @@ export class BranchManagementController {
   async getPublic() {
     const { data, error } = await this.supabaseService.getClient()
       .from('branches')
-      .select('id, name, address, phone_number, is_active')
-      .eq('is_active', true)
+      .select('id, name, address, district_id')
       .order('name');
     
-    if (error) throw new Error(error.message);
+    if (error) {
+      this.logger.warn(`Public branches fetch failed: ${error.message}`);
+      // Fallback: try selecting only id and name
+      const { data: fallback } = await this.supabaseService.getClient()
+        .from('branches')
+        .select('id, name')
+        .order('name');
+      return fallback || [];
+    }
     return data || [];
   }
 
