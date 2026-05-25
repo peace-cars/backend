@@ -17,7 +17,7 @@ export class BranchManagementController {
   @Get('public')
   async getPublic() {
     const { data, error } = await this.supabaseService.getClient()
-      .from('locations')
+      .from('branches')
       .select('id, name, address, phone_number, is_active')
       .eq('is_active', true)
       .order('name');
@@ -29,7 +29,7 @@ export class BranchManagementController {
   @Get()
   async getAll(@Req() req: any) {
     const client = this.supabaseService.getClient();
-    let query = client.from('locations').select('*');
+    let query = client.from('branches').select('*');
 
     // Hierarchy Scoping
     if (req.user.role === Role.GENERAL_MANAGER || req.user.role === Role.FINANCE_AUDITOR) {
@@ -93,7 +93,7 @@ export class BranchManagementController {
      let branchName = 'Global HQ';
      
      if (req.user.branchId) {
-        const { data: loc } = await client.from('locations').select('name').eq('id', req.user.branchId).single();
+        const { data: loc } = await client.from('branches').select('name').eq('id', req.user.branchId).single();
         if (loc) branchName = loc.name;
      }
 
@@ -146,7 +146,7 @@ export class BranchManagementController {
   @Roles(Role.GENERAL_MANAGER)
   async create(@Body() data: any) {
     const { data: newBranch, error } = await this.supabaseService.getClient()
-      .from('locations')
+      .from('branches')
       .insert([{ 
          name: data.name, 
          code: data.code, 
@@ -182,13 +182,13 @@ export class BranchManagementController {
 
     // Remove this DM from any other branch they currently manage
     await client
-      .from('locations')
+      .from('branches')
       .update({ manager_id: null })
       .eq('manager_id', body.managerId);
 
     // Assign the DM to this branch
     const { error: updateError } = await client
-      .from('locations')
+      .from('branches')
       .update({ manager_id: body.managerId })
       .eq('id', branchId);
 
@@ -212,7 +212,7 @@ export class BranchManagementController {
     const client = this.supabaseService.getClient();
     
     const { error } = await client
-      .from('locations')
+      .from('branches')
       .update({ manager_id: null })
       .eq('id', branchId);
 
@@ -224,7 +224,7 @@ export class BranchManagementController {
   @Roles(Role.GENERAL_MANAGER)
   async update(@Param('id') id: string, @Body() data: any) {
     const { error } = await this.supabaseService.getClient()
-      .from('locations')
+      .from('branches')
       .update(data)
       .eq('id', id);
     if (error) return { success: false, message: error.message };
@@ -236,7 +236,7 @@ export class BranchManagementController {
   async toggleActive(@Param('id') id: string) {
     const client = this.supabaseService.getClient();
     const { data: currentBranch, error: fetchError } = await client
-      .from('locations')
+      .from('branches')
       .select('is_active')
       .eq('id', id)
       .single();
@@ -246,7 +246,7 @@ export class BranchManagementController {
     }
 
     const { error } = await client
-      .from('locations')
+      .from('branches')
       .update({ is_active: !currentBranch.is_active })
       .eq('id', id);
     

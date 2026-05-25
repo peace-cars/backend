@@ -207,11 +207,15 @@ export class TradeInRequestsService {
       vehicle_make_model: vehicleMakeModel,
       car_description: carDescription,
       user_asking_price_etb: askingPrice,
-      branch_id: locationId,
       status: 'NEW_LEAD',
       photos: photoArray,
       financing_requested: data.financingRequested || false,
     };
+
+    // Only set branch_id if provided — prevents FK violation when locationId is absent
+    if (locationId) {
+      insertPayload.branch_id = locationId;
+    }
 
     if (data.vehicleDetails && typeof data.vehicleDetails === 'object') {
       insertPayload.vehicle_details = data.vehicleDetails;
@@ -224,6 +228,8 @@ export class TradeInRequestsService {
       insertPayload.contact_city = data.contactCity;
     }
 
+    this.logger.debug(`createLead: userId=${authUserId}, locationId=${locationId}`);
+
     const { data: lead, error } = await supabase
       .from('trade_in_requests')
       .insert(insertPayload)
@@ -233,6 +239,7 @@ export class TradeInRequestsService {
     if (error) throw new BadRequestException(error.message);
     return lead;
   }
+
 
   async getCustomerLeads(userId: string, customerId: string) {
     const supabase = this.supabaseService.getClient(); // Ensure RLS scoping here too
