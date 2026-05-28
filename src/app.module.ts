@@ -14,6 +14,7 @@ import { InspectionsModule } from './inspections/inspections.module';
 import { FinancePlansModule } from './finance-plans/finance-plans.module';
 import { CommissionsModule } from './commissions/commissions.module';
 import { LocationsModule } from './locations/locations.module';
+import { ProfilesModule } from './profiles/profiles.module';
 import { BankPartnersModule } from './bank-partners/bank-partners.module';
 import { VehicleExpensesModule } from './vehicle-expenses/vehicle-expenses.module';
 import { VehiclePriceHistoryModule } from './vehicle-price-history/vehicle-price-history.module';
@@ -30,6 +31,7 @@ import { StaffTasksModule } from './staff-tasks/staff-tasks.module';
 import { OfficialStampsModule } from './official-stamps/official-stamps.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { CustomOrdersModule } from './custom-orders/custom-orders.module';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
@@ -68,6 +70,8 @@ import { CustomOrdersModule } from './custom-orders/custom-orders.module';
     OfficialStampsModule,
     TelegramModule,
     CustomOrdersModule,
+    CommunityModule,
+    ProfilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

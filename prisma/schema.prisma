@@ -109,6 +109,8 @@ model profiles {
   gamification_points                                             Int?                          @default(0)
   created_at                                                      DateTime?                     @default(now()) @db.Timestamptz(6)
   updated_at                                                      DateTime?                     @default(now()) @db.Timestamptz(6)
+  username                                                        String?                       @unique @db.VarChar(50)
+  bio                                                             String?
   performance_rating                                              Decimal?                      @default(5.0) @db.Decimal(3, 2)
   total_completed_tasks                                           Int?                          @default(0)
   role_id                                                         String?                       @db.Uuid
@@ -128,6 +130,7 @@ model profiles {
   crypto_audit_logs                                               crypto_audit_logs[]
   custom_orders                                                   custom_orders[]
   districts_districts_manager_idToprofiles                        districts[]                   @relation("districts_manager_idToprofiles")
+  user_garages                                                    user_garages[]
   finance_plans                                                   finance_plans[]
   inspections                                                     inspections[]
   messages                                                        messages[]
@@ -153,9 +156,26 @@ model profiles {
   trade_in_requests_trade_in_requests_customer_idToprofiles       trade_in_requests[]           @relation("trade_in_requests_customer_idToprofiles")
   vehicle_expenses                                                vehicle_expenses[]
   vehicle_price_history                                           vehicle_price_history[]
+  community_posts                                                 community_posts[]
 
   @@index([district_id], map: "idx_profiles_district_id")
   @@index([location_id], map: "idx_profiles_location_id")
+  @@schema("public")
+}
+
+model community_posts {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String    @db.Uuid
+  title       String    @db.VarChar(255)
+  content     String
+  upvotes     Int       @default(0)
+  images      String[]  @default([])
+  youtube_url String?
+  post_type   String?   @default("discussion") @db.VarChar(20)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  
+  profiles    profiles  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
   @@schema("public")
 }
 
@@ -1439,6 +1459,22 @@ enum vehicle_status {
   SHOWROOM
   RESERVED
   SOLD
+
+  @@schema("public")
+}
+
+model user_garages {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String   @db.Uuid
+  make        String   @db.VarChar(100)
+  model       String   @db.VarChar(100)
+  year        Int
+  description String?
+  images      String[] @default([])
+  is_public   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  
+  profiles    profiles @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }
