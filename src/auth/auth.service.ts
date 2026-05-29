@@ -37,8 +37,34 @@ export class AuthService {
       .maybeSingle();
 
     if (!profile) {
-      this.logger.error(`Security Incident: User ${authData.user.id} logged in but has no profile record.`);
-      throw new UnauthorizedException('Authentication successful but profile metadata is missing. Contact HQ.');
+      this.logger.warn(`Security Incident (Ghost User): User ${authData.user.id} logged in but has no profile. Initiating auto-repair...`);
+      await this.repairProfile(authData.user);
+      
+      // Re-fetch profile after repair
+      const { data: recoveredProfile } = await this.supabaseService.getClient()
+        .from('profiles')
+        .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      if (!recoveredProfile) {
+        throw new UnauthorizedException('Authentication successful but profile auto-repair failed. Please contact HQ.');
+      }
+      
+      this.logger.log(`Auto-repair successful for user ${authData.user.id}. Proceeding with login.`);
+      
+      return {
+        session: {
+          access_token: authData.session?.access_token,
+          refresh_token: authData.session?.refresh_token,
+          expires_at: authData.session?.expires_at,
+        },
+        user: {
+          id: authData.user.id,
+          email: authData.user.email,
+        },
+        profile: recoveredProfile,
+      };
     }
 
     this.logger.log(`Login success for ${email}`);

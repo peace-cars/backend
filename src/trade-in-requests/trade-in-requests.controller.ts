@@ -62,7 +62,7 @@ export class TradeInRequestsController {
   @Patch(':id/status')
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.STAFF)
   updateStatus(@Req() req: any, @Param('id') id: string, @Body() data: UpdateStatusDto) {
-    return this.service.updateStatus(req.user.id, req.user.role, id, data.status);
+    return this.service.updateStatus(req.user.id, req.user.role, id, data.status, data.assigned_staff_id || data.assigned_to);
   }
 
   @Patch(':id/approve')

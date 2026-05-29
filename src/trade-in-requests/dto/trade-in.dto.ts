@@ -62,4 +62,12 @@ export class InspectionUploadDto {
 export class UpdateStatusDto {
   @IsString()
   status: string;
+
+  @IsOptional()
+  @IsString()
+  assigned_staff_id?: string;
+
+  @IsOptional()
+  @IsString()
+  assigned_to?: string;
 }

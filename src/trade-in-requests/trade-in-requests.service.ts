@@ -114,6 +114,7 @@ export class TradeInRequestsService {
       status: req.status,
       photos: req.photos,
       askingPrice: req.user_asking_price_etb,
+      user_asking_price_etb: req.user_asking_price_etb,
       vehicleDetails: req.vehicle_details || {},
       contactPhone: req.contact_phone,
       contactCity: req.contact_city,
@@ -266,7 +267,7 @@ export class TradeInRequestsService {
     return data;
   }
 
-  async updateStatus(userId: string, userRole: Role, leadId: string, status: string) {
+  async updateStatus(userId: string, userRole: Role, leadId: string, status: string, assignedStaffId?: string) {
     if (userRole !== Role.GENERAL_MANAGER && userRole !== Role.FINANCE_AUDITOR) {
       const canAccess = await this.permissions.canAccessTradeIn(userId, userRole, leadId);
       if (!canAccess) {
@@ -274,10 +275,26 @@ export class TradeInRequestsService {
       }
     }
 
+    const updatePayload: any = { status };
+    if (assignedStaffId) {
+      updatePayload.assigned_staff_id = assignedStaffId;
+      const supabase = this.adminSupabase.getClient();
+      const { data: existingTask } = await supabase.from('staff_tasks').select('id').eq('trade_in_id', leadId).eq('assigned_to', assignedStaffId).single();
+      if (!existingTask) {
+        await supabase.from('staff_tasks').insert({
+          trade_in_id: leadId,
+          assigned_to: assignedStaffId,
+          assigned_by: userId,
+          status: 'ASSIGNED',
+          description: 'Technical Evaluation & Appraisal'
+        });
+      }
+    }
+
     const supabase = this.adminSupabase.getClient();
     const { data, error } = await supabase
       .from('trade_in_requests')
-      .update({ status })
+      .update(updatePayload)
       .eq('id', leadId)
       .select()
       .single();

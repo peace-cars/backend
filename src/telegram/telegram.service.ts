@@ -223,6 +223,10 @@ export class TelegramService implements OnModuleInit {
       }
 
       // ── Subscribe Callbacks ──
+      if (query.data === 'sub_noop') {
+        // Separator button — do nothing
+        return;
+      }
       if (query.data.startsWith('sub_filter_')) {
         const filter = query.data.replace('sub_filter_', '');
         await this.handleSubscribeFilter(chatId, filter);
@@ -1313,7 +1317,7 @@ export class TelegramService implements OnModuleInit {
 
   private async handleSubscribeStart(chatId: number) {
     try {
-      await this.bot.sendMessage(chatId, '🔔 *Smart Inventory Alerts*\n\nGet notified instantly when new vehicles matching your interest arrive at our showroom!\n\n*Choose a filter:*', {
+      await this.bot.sendMessage(chatId, '🔔 *Smart Alerts*\n\nGet notified instantly when things happen on PeaceCars!\n\n*🚗 Vehicle Alerts:*', {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
@@ -1321,6 +1325,10 @@ export class TelegramService implements OnModuleInit {
             [{ text: '⚡ Electric Vehicles Only', callback_data: 'sub_filter_EV' }],
             [{ text: '🔋 Hybrids Only', callback_data: 'sub_filter_HYBRID' }],
             [{ text: '🏔️ SUVs Only', callback_data: 'sub_filter_SUV' }],
+            [{ text: '─── Community ───', callback_data: 'sub_noop' }],
+            [{ text: '💬 New Community Posts', callback_data: 'sub_filter_COMMUNITY_POSTS' }],
+            [{ text: '⭐ Reviews & Testimonials', callback_data: 'sub_filter_COMMUNITY_REVIEWS' }],
+            [{ text: '📅 Events & Meetups', callback_data: 'sub_filter_COMMUNITY_EVENTS' }],
           ],
         },
       });
@@ -1356,7 +1364,15 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
-    const filterLabels: Record<string, string> = { ALL: '🌐 All New Arrivals', EV: '⚡ Electric Vehicles', HYBRID: '🔋 Hybrids', SUV: '🏔️ SUVs' };
+    const filterLabels: Record<string, string> = {
+      ALL: '🌐 All New Arrivals',
+      EV: '⚡ Electric Vehicles',
+      HYBRID: '🔋 Hybrids',
+      SUV: '🏔️ SUVs',
+      COMMUNITY_POSTS: '💬 Community Posts',
+      COMMUNITY_REVIEWS: '⭐ Reviews & Testimonials',
+      COMMUNITY_EVENTS: '📅 Events & Meetups',
+    };
 
     try {
       await this.bot.sendMessage(chatId, [
@@ -1408,6 +1424,82 @@ export class TelegramService implements OnModuleInit {
     } catch (err) {
       this.logger.error(`Failed to confirm unsubscribe for chat ${chatId}`, err);
     }
+  }
+
+  // ─── Public: Broadcast new community post to Telegram subscribers ────
+
+  async broadcastNewCommunityPost(post: { id: string; title: string; content: string; post_type: string; images?: string[] }, authorName: string) {
+    if (!this.bot) return;
+    const client = this.supabase.getClient();
+
+    // Fetch community subscribers only
+    const communityFilters = ['COMMUNITY_POSTS', 'COMMUNITY_REVIEWS', 'COMMUNITY_EVENTS'];
+    const { data: subs, error } = await client
+      .from('telegram_subscriptions')
+      .select('telegram_chat_id, filter_type')
+      .in('filter_type', communityFilters);
+
+    if (error || !subs || subs.length === 0) return;
+
+    // Match post_type to subscription filter for precision targeting
+    const postTypeToFilter: Record<string, string> = {
+      discussion: 'COMMUNITY_POSTS',
+      question: 'COMMUNITY_POSTS',
+      news: 'COMMUNITY_POSTS',
+      review: 'COMMUNITY_REVIEWS',
+      event: 'COMMUNITY_EVENTS',
+    };
+    const matchingFilter = postTypeToFilter[post.post_type] || 'COMMUNITY_POSTS';
+
+    // Only send to subscribers whose filter matches (or who subscribed to the general COMMUNITY_POSTS)
+    const eligibleSubs = subs.filter(s =>
+      s.filter_type === matchingFilter || s.filter_type === 'COMMUNITY_POSTS'
+    );
+
+    // Deduplicate chat IDs
+    const uniqueChatIds = [...new Set(eligibleSubs.map(s => s.telegram_chat_id))];
+
+    const snippet = post.content.length > 150
+      ? post.content.substring(0, 150) + '…'
+      : post.content;
+
+    const typeEmoji: Record<string, string> = {
+      discussion: '💬',
+      review: '⭐',
+      news: '📰',
+      question: '❓',
+    };
+    const emoji = typeEmoji[post.post_type] || '📝';
+
+    const message = [
+      `${emoji} *New Community Post!*`,
+      ``,
+      `📌 *${post.title}*`,
+      `👤 By: ${authorName}`,
+      ``,
+      `"${snippet}"`,
+      ``,
+      `🌐 Read & discuss: peacecars.com/community`,
+    ].join('\n');
+
+    let sentCount = 0;
+    for (const chatId of uniqueChatIds) {
+      try {
+        if (post.images && post.images.length > 0) {
+          await this.bot.sendPhoto(chatId, post.images[0], {
+            caption: message,
+            parse_mode: 'Markdown',
+          });
+        } else {
+          await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        }
+        sentCount++;
+      } catch (err) {
+        this.logger.warn(`Failed to send community post alert to chat ${chatId}: ${err.message}`);
+      }
+    }
+
+    this.logger.log(`📣 Community post "${post.title}" broadcast to ${sentCount}/${uniqueChatIds.length} subscriber(s).`);
   }
 
   // ─── Public: Dispatch alerts when a new vehicle enters SHOWROOM ────

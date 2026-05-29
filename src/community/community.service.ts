@@ -1,15 +1,22 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class CommunityService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  private readonly logger = new Logger(CommunityService.name);
+
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    @Inject(forwardRef(() => TelegramService))
+    private readonly telegramService: TelegramService,
+  ) {}
 
   async getPosts() {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('community_posts')
-      .select('id, title, content, upvotes, created_at, images, youtube_url, post_type, user_id, profiles(full_name, avatar_url, username)')
+      .select('id, title, content, upvotes, created_at, images, youtube_url, post_type, user_id, profiles(full_name, avatar_url, username), community_comments(count)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -22,7 +29,7 @@ export class CommunityService {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('community_posts')
-      .select('id, title, content, upvotes, created_at, images, youtube_url, post_type, user_id, profiles(full_name, avatar_url, username)')
+      .select('id, title, content, upvotes, created_at, images, youtube_url, post_type, user_id, profiles(full_name, avatar_url, username), community_comments(count)')
       .eq('id', postId)
       .single();
 
@@ -91,33 +98,50 @@ export class CommunityService {
     if (error) {
       throw new BadRequestException(error.message);
     }
+
+    // Fire-and-forget: broadcast to Telegram subscribers
+    this.broadcastPostToTelegram(data, userId).catch(err =>
+      this.logger.warn(`Telegram broadcast failed (non-blocking): ${err.message}`)
+    );
+
     return data;
+  }
+
+  private async broadcastPostToTelegram(post: any, userId: string) {
+    // Resolve the author's display name
+    const { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('full_name, username')
+      .eq('id', userId)
+      .single();
+
+    const authorName = profile?.full_name || profile?.username || 'Community Member';
+
+    await this.telegramService.broadcastNewCommunityPost({
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      post_type: post.post_type,
+      images: post.images,
+    }, authorName);
   }
 
   async upvotePost(postId: string) {
     const supabase = this.supabaseService.getClient();
 
-    const { data: post, error: fetchError } = await supabase
-      .from('community_posts')
-      .select('upvotes')
-      .eq('id', postId)
-      .single();
-
-    if (fetchError || !post) {
-      throw new BadRequestException('Post not found');
-    }
-
-    const { data, error } = await supabase
-      .from('community_posts')
-      .update({ upvotes: (post.upvotes || 0) + 1 })
-      .eq('id', postId)
-      .select()
-      .single();
+    // Atomic Increment via Database RPC to prevent Race Conditions
+    const { error } = await supabase.rpc('increment_community_upvotes', { post_id: postId });
 
     if (error) {
-      throw new BadRequestException(error.message);
+      this.logger.error(`Failed to upvote post ${postId}: ${error.message}`);
+      throw new BadRequestException('Failed to upvote post. ' + error.message);
     }
+
+    // Return current count for client to reflect
+    const { data } = await supabase.from('community_posts').select('upvotes').eq('id', postId).single();
     return data;
+
+
   }
 
   // ── Events ─────────────────────────────────────────────────────
@@ -173,27 +197,16 @@ export class CommunityService {
   async rsvpEvent(userId: string, eventId: string) {
     const supabase = this.supabaseService.getClient();
 
-    // Simple RSVP: increment count
-    const { data: event, error: fetchError } = await supabase
-      .from('community_events')
-      .select('rsvp_count')
-      .eq('id', eventId)
-      .single();
-
-    if (fetchError || !event) {
-      throw new BadRequestException('Event not found');
-    }
-
-    const { data, error } = await supabase
-      .from('community_events')
-      .update({ rsvp_count: (event.rsvp_count || 0) + 1 })
-      .eq('id', eventId)
-      .select()
-      .single();
+    // Atomic RSVP via Database RPC to prevent Race Conditions
+    const { error } = await supabase.rpc('increment_event_rsvp', { event_id: eventId });
 
     if (error) {
-      throw new BadRequestException(error.message);
+      this.logger.error(`Failed to RSVP event ${eventId}: ${error.message}`);
+      throw new BadRequestException('Failed to RSVP event. ' + error.message);
     }
+
+    // Return current count for client to reflect
+    const { data } = await supabase.from('community_events').select('rsvp_count').eq('id', eventId).single();
     return data;
   }
 }

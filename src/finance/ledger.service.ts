@@ -65,40 +65,27 @@ export class LedgerService {
         accounts.map((a) => [a.name, a.id])
       );
 
-      // 3. Insert transaction header
-      const { data: transaction, error: txError } = await client
-        .from('transactions')
-        .insert([{
-          description,
-          reference_type: refType,
-          reference_id: refId
-        }])
-        .select()
-        .single();
-
-      if (txError || !transaction) {
-        throw new Error(`Failed to create transaction header: ${txError?.message}`);
-      }
-
-      // 4. Insert ledger entries linked to the transaction header
+      // 3. Atomic insertion of Header + Entries via SQL RPC to guarantee ACID properties
       const preparedEntries = entries.map((e) => ({
-        transaction_id: transaction.id,
         account_id: accountMap.get(e.accountName)!,
         type: e.type,
         amount: Number(e.amount)
       }));
 
-      const { error: entriesError } = await client
-        .from('ledger_entries')
-        .insert(preparedEntries);
+      const { data: transactionId, error: rpcError } = await client.rpc('post_ledger_transaction', {
+        p_description: description,
+        p_ref_type: refType,
+        p_ref_id: refId,
+        p_entries: preparedEntries
+      });
 
-      if (entriesError) {
-        // Because of the database CONSTRAINT trigger we added, this insert will fail 
-        // if debits do not equal credits in the actual DB records.
-        throw new Error(`Failed to insert ledger entries: ${entriesError.message}`);
+      if (rpcError || !transactionId) {
+        throw new Error(`Atomic Ledger Insertion Failed: ${rpcError?.message}`);
       }
 
-      this.logger.log(`Posted ledger transaction: "${description}" (ID: ${transaction.id}) for $${debits.toFixed(2)}`);
+      this.logger.log(`Posted ledger transaction: "${description}" (ID: ${transactionId}) for $${debits.toFixed(2)}`);
+
+      const transaction = { id: transactionId, description, reference_type: refType, reference_id: refId };
 
       // 5. Build and attach cryptographic audit record
       await this.cryptoAuditService.logAction('LEDGER_TRANSACTION_POSTED', {
