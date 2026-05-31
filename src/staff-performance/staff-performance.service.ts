@@ -16,7 +16,7 @@ export class StaffPerformanceService {
         .order('gamification_points', { ascending: false });
 
       if (branchId) {
-        query = query.eq('branch_id', branchId);
+        query = query.eq('location_id', branchId);
       }
 
       const { data, error } = await query;
@@ -31,7 +31,7 @@ export class StaffPerformanceService {
         rank: idx + 1,
         fullName: st.full_name,
         role: st.is_inspector_verified ? "Certified Inspector" : "Triage Specialist",
-        locationId: st.branch_id,
+        locationId: st.location_id || st.branch_id,
         score: st.gamification_points,
         totalSales: st.total_deals_closed,
         averageRating: st.average_rating,

@@ -28,15 +28,19 @@ export class VehiclesService {
         .eq('status', 'SHOWROOM')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
+        throw new BadRequestException(`DB_ERROR: ${error.message}`);
+      }
       
       return (data || []).map(v => ({
         ...v,
-        inquiryCount: v.conversations?.[0]?.count || 0
+        inquiryCount: v.conversations?.[0]?.count || 0,
+        branchName: v.branches?.name || 'Unassigned'
       }));
     } catch (err) {
       this.logger.error('Failed fetching showroom vehicles', err);
-      return [];
+      throw err;
     }
   }
 
@@ -89,7 +93,7 @@ export class VehiclesService {
         `);
 
       if (explicitBranchId) {
-        if (user.role === 'ADMIN' || user.role === 'GENERAL_MANAGER' || user.role === 'FINANCE_AUDITOR') {
+        if (user.role === 'ADMIN' || user.role === 'FINANCE_AUDITOR' || user.role === 'GENERAL_MANAGER') {
           query = query.eq('branch_id', explicitBranchId);
         } else if (user.scopedBranchIds && user.scopedBranchIds.includes(explicitBranchId)) {
           query = query.eq('branch_id', explicitBranchId);
@@ -98,7 +102,7 @@ export class VehiclesService {
         }
       } else {
         // Hierarchy-Aware Scoping via scopedBranchIds (populated by RolesGuard)
-        if (user.role === 'ADMIN' || user.role === 'GENERAL_MANAGER' || user.role === 'FINANCE_AUDITOR') {
+        if (user.role === 'ADMIN' || user.role === 'FINANCE_AUDITOR' || user.role === 'GENERAL_MANAGER') {
           // Global view — no filter
         } else if (user.scopedBranchIds && user.scopedBranchIds.length > 0) {
           // DM or Staff: filter to their scoped branches
@@ -111,15 +115,19 @@ export class VehiclesService {
 
       const { data, error } = await query.order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
+        throw new BadRequestException(`DB_ERROR: ${error.message}`);
+      }
       
       return (data || []).map(v => ({
         ...v,
-        inquiryCount: v.conversations?.[0]?.count || 0
+        inquiryCount: v.conversations?.[0]?.count || 0,
+        branchName: v.branches?.name || 'Unassigned'
       }));
     } catch (err) {
       this.logger.error('Failed fetching all vehicles', err);
-      return [];
+      throw err;
     }
   }
 
@@ -324,7 +332,10 @@ export class VehiclesService {
         .eq('status', 'SOLD')
         .order('sold_date', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
+        throw new BadRequestException(`DB_ERROR: ${error.message}`);
+      }
       
       return (data || []).map((v: any) => {
         const purchaseCost = Number(v.unit_cost) || 0;
@@ -340,12 +351,12 @@ export class VehiclesService {
           margin: salePrice > 0 ? (((salePrice - purchaseCost) / salePrice) * 100).toFixed(1) : 0,
           soldDate: v.sold_date,
           daysInStock: v.created_at ? Math.floor((Date.now() - new Date(v.created_at).getTime()) / 86400000) : 0,
-          branchName: null
+          branchName: v.branches?.name || null
         };
       });
     } catch (err) {
       this.logger.error('Failed fetching profitability report', err);
-      return [];
+      throw err;
     }
   }
 
@@ -366,7 +377,10 @@ export class VehiclesService {
         .lt('created_at', cutoffDate)
         .order('created_at', { ascending: true });
       
-      if (error) throw error;
+      if (error) {
+        this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
+        throw new BadRequestException(`DB_ERROR: ${error.message}`);
+      }
       
       return (data || []).map((v: any) => ({
         id: v.id,
@@ -381,7 +395,7 @@ export class VehiclesService {
       }));
     } catch (err) {
       this.logger.error('Failed fetching aged inventory', err);
-      return [];
+      throw err;
     }
   }
 

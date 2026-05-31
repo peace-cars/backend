@@ -21,6 +21,11 @@ export class TradeInRequestsService {
   async getAllLeads(userId: string, userRole: Role, scopedBranchIds?: string[], explicitBranchId?: string) {
     // Utilize the admin client as we handle authorization logic explicitly in the controller and service
     const supabase = this.adminSupabase.getClient();
+    
+    // Fetch profile to get exact branch_id for GM/STAFF
+    const { data: profile } = await supabase.from('profiles').select('branch_id').eq('id', userId).single();
+    const userBranchId = profile?.branch_id;
+
     let query = supabase
       .from('trade_in_requests')
       .select(`
@@ -36,10 +41,29 @@ export class TradeInRequestsService {
         )
       `);
 
-    // If an explicit branch is requested, apply the explicit filter.
-    // RLS will ensure it fails/returns empty if the user isn't allowed to see that branch.
     if (explicitBranchId) {
-      query = query.eq('branch_id', explicitBranchId);
+      if ((userRole as any) === 'ADMIN' || userRole === Role.FINANCE_AUDITOR || (userRole as any) === 'GENERAL_MANAGER') {
+        query = query.eq('branch_id', explicitBranchId);
+      } else if (scopedBranchIds && scopedBranchIds.includes(explicitBranchId)) {
+        query = query.eq('branch_id', explicitBranchId);
+      } else {
+        throw new ForbiddenException("You do not have access to this branch.");
+      }
+    } else {
+      if ((userRole as any) === 'ADMIN' || userRole === Role.FINANCE_AUDITOR || (userRole as any) === 'GENERAL_MANAGER') {
+        // Global view
+      } else if (userRole === Role.STAFF) {
+        if (userBranchId) {
+          query = query.eq('branch_id', userBranchId);
+        } else {
+          // If Staff lacks a branch, return no leads to be safe
+          query = query.is('branch_id', null);
+        }
+      } else if (scopedBranchIds && scopedBranchIds.length > 0) {
+        query = query.in('branch_id', scopedBranchIds);
+      } else if (userBranchId) {
+        query = query.eq('branch_id', userBranchId);
+      }
     }
 
     const { data, error } = await query.order('created_at', { ascending: false });

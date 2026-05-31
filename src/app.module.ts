@@ -1,5 +1,7 @@
-import { Module } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { CorrelationIdMiddleware } from './common/correlation-id.middleware';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
@@ -32,6 +34,8 @@ import { OfficialStampsModule } from './official-stamps/official-stamps.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { CustomOrdersModule } from './custom-orders/custom-orders.module';
 import { CommunityModule } from './community/community.module';
+
+import { HealthController } from './common/health.controller';
 
 @Module({
   imports: [
@@ -73,7 +77,17 @@ import { CommunityModule } from './community/community.module';
     CommunityModule,
     ProfilesModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, HealthController],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

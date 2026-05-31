@@ -37,9 +37,6 @@ export class ScopeGuard implements CanActivate {
 
     if (!user) return false;
 
-    // GENERAL_MANAGER bypasses all scoping — God's Eye
-    if (user.role === Role.GENERAL_MANAGER) return true;
-
     const body = request.body;
     const scopedBranchIds: string[] = user.scopedBranchIds || [];
 
@@ -73,7 +70,7 @@ export class ScopeGuard implements CanActivate {
       const explicitTargetBranchId = body?.branch_id || body?.branchId || request.params?.branchId || request.query?.branchId;
       const targetBranchId = explicitTargetBranchId || (treatIdAsBranch ? request.params?.id : undefined);
       if (targetBranchId && targetBranchId !== user.branchId) {
-        this.logger.warn(`[SCOPE DENIED] Staff ${user.id} tried to access branch ${targetBranchId}, assigned to ${user.branchId}`);
+        this.logger.warn(`[SCOPE DENIED] ${user.role} ${user.id} tried to access branch ${targetBranchId}, assigned to ${user.branchId}`);
         throw new ForbiddenException('Action outside of assigned branch scope.');
       }
     }

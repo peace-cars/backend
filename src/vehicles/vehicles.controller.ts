@@ -126,6 +126,15 @@ export class VehiclesController {
     return this.vehiclesService.update(id, data);
   }
 
+  @ApiOperation({ summary: 'Get a single vehicle by ID (admin)' })
+  @ApiBearerAuth('JWT-auth')
+  @Get(':id')
+  @UseGuards(RolesGuard, ScopeGuard)
+  @RequiresPermission('inventory.view')
+  async getVehicleById(@Req() req: any, @Param('id') id: string) {
+    return this.vehiclesService.getVehicleById(id, req.user);
+  }
+
   @Post('promote/:leadId')
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.create')

@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { GlobalExceptionFilter } from './common/http-exception.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
 import { TransformInterceptor } from './common/transform.interceptor';
+import { TimeoutInterceptor } from './common/timeout.interceptor';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
@@ -35,6 +36,9 @@ async function bootstrap() {
 
   // Global Interceptor for logging request/response times
   app.useGlobalInterceptors(new LoggingInterceptor());
+
+  // Global Interceptor for request timeouts
+  app.useGlobalInterceptors(new TimeoutInterceptor());
 
   // Robust Enterprise Dynamic CORS Configuration
   app.enableCors({

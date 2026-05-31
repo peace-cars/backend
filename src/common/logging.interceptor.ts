@@ -11,6 +11,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const request = ctx.getRequest();
     const method = request.method;
     const url = request.url;
+    const correlationId = request['correlationId'] || 'unknown';
     const now = Date.now();
 
     return next
@@ -22,9 +23,9 @@ export class LoggingInterceptor implements NestInterceptor {
           const duration = Date.now() - now;
           
           if (duration > 2000) {
-            this.logger.warn(`${method} ${url} ${statusCode} - SLOW REQUEST: ${duration}ms`);
+            this.logger.warn(`[Req-ID: ${correlationId}] ${method} ${url} ${statusCode} - SLOW REQUEST: ${duration}ms`);
           } else {
-            this.logger.log(`${method} ${url} ${statusCode} - ${duration}ms`);
+            this.logger.log(`[Req-ID: ${correlationId}] ${method} ${url} ${statusCode} - ${duration}ms`);
           }
         }),
       );
