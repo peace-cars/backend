@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import { SupabaseScopedService } from '../supabase/supabase-scoped.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { FsmService } from '../common/fsm.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class VehiclesService {
@@ -13,6 +14,7 @@ export class VehiclesService {
     private supabaseAdmin: SupabaseService,
     private fsmService: FsmService,
     private telegramService: TelegramService,
+    @Optional() private readonly realtime?: RealtimeGateway,
   ) {}
 
   async getShowroom() {
@@ -177,6 +179,10 @@ export class VehiclesService {
         this.telegramService.handleNewShowroomVehicle(newVehicle).catch(err => {
           this.logger.error('Failed to dispatch new vehicle showroom alert', err);
         });
+
+        if (this.realtime) {
+          this.realtime.broadcastToRoom('showroom', 'showroom_vehicle_upserted', newVehicle);
+        }
       }
 
       return newVehicle;
@@ -284,6 +290,15 @@ export class VehiclesService {
         this.telegramService.handleNewShowroomVehicle(updated).catch(err => {
           this.logger.error('Failed to dispatch transitioned vehicle showroom alert', err);
         });
+      }
+
+      // Realtime Pub/Sub: Notify showroom clients
+      if (this.realtime) {
+        if (updated.status === 'SHOWROOM') {
+          this.realtime.broadcastToRoom('showroom', 'showroom_vehicle_upserted', updated);
+        } else if (existing.status === 'SHOWROOM' && updated.status !== 'SHOWROOM') {
+          this.realtime.broadcastToRoom('showroom', 'showroom_vehicle_removed', { id: updated.id });
+        }
       }
 
       return updated;

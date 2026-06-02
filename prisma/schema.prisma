@@ -1,7 +1,7 @@
 generator client {
   provider        = "prisma-client-js"
-  engineType      = "library"
   previewFeatures = ["partialIndexes"]
+  engineType      = "library"
 }
 
 datasource db {
@@ -33,9 +33,10 @@ model branches {
   created_at   DateTime?           @default(now()) @db.Timestamptz(6)
   district     districts?          @relation(fields: [district_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   profiles     profiles[]
-  staff_shifts staff_shifts[]
-  trade_ins    trade_in_requests[]
-  vehicles     vehicles[]
+  staff_shifts      staff_shifts[]
+  trade_ins         trade_in_requests[]
+  sourcing_requests sourcing_requests[]
+  vehicles          vehicles[]
 
   @@unique([name, district_id])
   @@schema("public")
@@ -109,8 +110,6 @@ model profiles {
   gamification_points                                             Int?                          @default(0)
   created_at                                                      DateTime?                     @default(now()) @db.Timestamptz(6)
   updated_at                                                      DateTime?                     @default(now()) @db.Timestamptz(6)
-  username                                                        String?                       @unique @db.VarChar(50)
-  bio                                                             String?
   performance_rating                                              Decimal?                      @default(5.0) @db.Decimal(3, 2)
   total_completed_tasks                                           Int?                          @default(0)
   role_id                                                         String?                       @db.Uuid
@@ -121,16 +120,20 @@ model profiles {
   fcm_token                                                       String?
   fcm_meta                                                        Json?
   last_seen_at                                                    DateTime?                     @db.Timestamptz(6)
+  bio                                                             String?
+  username                                                        String?                       @unique @db.VarChar(50)
   approval_logs                                                   approval_logs[]
   audit_logs                                                      audit_logs[]
   commissions_commissions_approved_byToprofiles                   commissions[]                 @relation("commissions_approved_byToprofiles")
   commissions_commissions_beneficiary_idToprofiles                commissions[]                 @relation("commissions_beneficiary_idToprofiles")
+  community_comments                                              community_comments[]
+  community_events                                                community_events[]
+  community_posts                                                 community_posts[]
   conversations_conversations_assigned_staff_idToprofiles         conversations[]               @relation("conversations_assigned_staff_idToprofiles")
   conversations_conversations_customer_idToprofiles               conversations[]               @relation("conversations_customer_idToprofiles")
   crypto_audit_logs                                               crypto_audit_logs[]
   custom_orders                                                   custom_orders[]
   districts_districts_manager_idToprofiles                        districts[]                   @relation("districts_manager_idToprofiles")
-  user_garages                                                    user_garages[]
   finance_plans                                                   finance_plans[]
   inspections                                                     inspections[]
   messages                                                        messages[]
@@ -154,9 +157,11 @@ model profiles {
   trade_in_requests_trade_in_requests_assigned_staff_idToprofiles trade_in_requests[]           @relation("trade_in_requests_assigned_staff_idToprofiles")
   trade_in_requests_trade_in_requests_broker_idToprofiles         trade_in_requests[]           @relation("trade_in_requests_broker_idToprofiles")
   trade_in_requests_trade_in_requests_customer_idToprofiles       trade_in_requests[]           @relation("trade_in_requests_customer_idToprofiles")
+  user_garages                                                    user_garages[]
   vehicle_expenses                                                vehicle_expenses[]
   vehicle_price_history                                           vehicle_price_history[]
-  community_posts                                                 community_posts[]
+  sourcing_requests_customer                                      sourcing_requests[]           @relation("sourcing_requests_customer_idToprofiles")
+  sourcing_requests_staff                                         sourcing_requests[]           @relation("sourcing_requests_assigned_staff_idToprofiles")
 
   @@index([district_id], map: "idx_profiles_district_id")
   @@index([location_id], map: "idx_profiles_location_id")
@@ -164,17 +169,21 @@ model profiles {
 }
 
 model community_posts {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id     String    @db.Uuid
-  title       String    @db.VarChar(255)
-  content     String
-  upvotes     Int       @default(0)
-  images      String[]  @default([])
-  youtube_url String?
-  post_type   String?   @default("discussion") @db.VarChar(20)
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  
-  profiles    profiles  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                 String                    @db.Uuid
+  title                   String                    @db.VarChar(255)
+  content                 String
+  upvotes                 Int                       @default(0)
+  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  images                  String[]                  @default([])
+  youtube_url             String?
+  post_type               String?                   @default("discussion") @db.VarChar(20)
+  tags                    String[]                  @default([])
+  updated_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  is_edited               Boolean?                  @default(false)
+  community_comments      community_comments[]
+  community_notifications community_notifications[]
+  profiles                profiles                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }
@@ -339,50 +348,55 @@ model conversations {
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model users {
-  instance_id                 String?                @db.Uuid
-  id                          String                 @id @db.Uuid
-  aud                         String?                @db.VarChar(255)
-  role                        String?                @db.VarChar(255)
-  email                       String?                @unique(map: "users_email_partial_key", where: raw("(is_sso_user = false)")) @db.VarChar(255)
-  encrypted_password          String?                @db.VarChar(255)
-  email_confirmed_at          DateTime?              @db.Timestamptz(6)
-  invited_at                  DateTime?              @db.Timestamptz(6)
-  confirmation_token          String?                @unique(map: "confirmation_token_idx", where: raw("((confirmation_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
-  confirmation_sent_at        DateTime?              @db.Timestamptz(6)
-  recovery_token              String?                @unique(map: "recovery_token_idx", where: raw("((recovery_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
-  recovery_sent_at            DateTime?              @db.Timestamptz(6)
-  email_change_token_new      String?                @unique(map: "email_change_token_new_idx", where: raw("((email_change_token_new)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
-  email_change                String?                @db.VarChar(255)
-  email_change_sent_at        DateTime?              @db.Timestamptz(6)
-  last_sign_in_at             DateTime?              @db.Timestamptz(6)
-  raw_app_meta_data           Json?
-  raw_user_meta_data          Json?
-  is_super_admin              Boolean?
-  created_at                  DateTime?              @db.Timestamptz(6)
-  updated_at                  DateTime?              @db.Timestamptz(6)
-  phone                       String?                @unique
-  phone_confirmed_at          DateTime?              @db.Timestamptz(6)
-  phone_change                String?                @default("")
-  phone_change_token          String?                @default("") @db.VarChar(255)
-  phone_change_sent_at        DateTime?              @db.Timestamptz(6)
-  confirmed_at                DateTime?              @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
-  email_change_token_current  String?                @unique(map: "email_change_token_current_idx", where: raw("((email_change_token_current)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
-  email_change_confirm_status Int?                   @default(0) @db.SmallInt
-  banned_until                DateTime?              @db.Timestamptz(6)
-  reauthentication_token      String?                @unique(map: "reauthentication_token_idx", where: raw("((reauthentication_token)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
-  reauthentication_sent_at    DateTime?              @db.Timestamptz(6)
-  is_sso_user                 Boolean                @default(false)
-  deleted_at                  DateTime?              @db.Timestamptz(6)
-  is_anonymous                Boolean                @default(false)
-  identities                  identities[]
-  mfa_factors                 mfa_factors[]
-  oauth_authorizations        oauth_authorizations[]
-  oauth_consents              oauth_consents[]
-  one_time_tokens             one_time_tokens[]
-  sessions                    sessions[]
-  webauthn_challenges         webauthn_challenges[]
-  webauthn_credentials        webauthn_credentials[]
-  profiles                    profiles?
+  instance_id                                                     String?                   @db.Uuid
+  id                                                              String                    @id @db.Uuid
+  aud                                                             String?                   @db.VarChar(255)
+  role                                                            String?                   @db.VarChar(255)
+  email                                                           String?                   @unique(map: "users_email_partial_key", where: raw("(is_sso_user = false)")) @db.VarChar(255)
+  encrypted_password                                              String?                   @db.VarChar(255)
+  email_confirmed_at                                              DateTime?                 @db.Timestamptz(6)
+  invited_at                                                      DateTime?                 @db.Timestamptz(6)
+  confirmation_token                                              String?                   @unique(map: "confirmation_token_idx", where: raw("((confirmation_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+  confirmation_sent_at                                            DateTime?                 @db.Timestamptz(6)
+  recovery_token                                                  String?                   @unique(map: "recovery_token_idx", where: raw("((recovery_token)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+  recovery_sent_at                                                DateTime?                 @db.Timestamptz(6)
+  email_change_token_new                                          String?                   @unique(map: "email_change_token_new_idx", where: raw("((email_change_token_new)::text !~ '^[0-9 ]*$'::text)")) @db.VarChar(255)
+  email_change                                                    String?                   @db.VarChar(255)
+  email_change_sent_at                                            DateTime?                 @db.Timestamptz(6)
+  last_sign_in_at                                                 DateTime?                 @db.Timestamptz(6)
+  raw_app_meta_data                                               Json?
+  raw_user_meta_data                                              Json?
+  is_super_admin                                                  Boolean?
+  created_at                                                      DateTime?                 @db.Timestamptz(6)
+  updated_at                                                      DateTime?                 @db.Timestamptz(6)
+  phone                                                           String?                   @unique
+  phone_confirmed_at                                              DateTime?                 @db.Timestamptz(6)
+  phone_change                                                    String?                   @default("")
+  phone_change_token                                              String?                   @default("") @db.VarChar(255)
+  phone_change_sent_at                                            DateTime?                 @db.Timestamptz(6)
+  confirmed_at                                                    DateTime?                 @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
+  email_change_token_current                                      String?                   @unique(map: "email_change_token_current_idx", where: raw("((email_change_token_current)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
+  email_change_confirm_status                                     Int?                      @default(0) @db.SmallInt
+  banned_until                                                    DateTime?                 @db.Timestamptz(6)
+  reauthentication_token                                          String?                   @unique(map: "reauthentication_token_idx", where: raw("((reauthentication_token)::text !~ '^[0-9 ]*$'::text)")) @default("") @db.VarChar(255)
+  reauthentication_sent_at                                        DateTime?                 @db.Timestamptz(6)
+  is_sso_user                                                     Boolean                   @default(false)
+  deleted_at                                                      DateTime?                 @db.Timestamptz(6)
+  is_anonymous                                                    Boolean                   @default(false)
+  identities                                                      identities[]
+  mfa_factors                                                     mfa_factors[]
+  oauth_authorizations                                            oauth_authorizations[]
+  oauth_consents                                                  oauth_consents[]
+  one_time_tokens                                                 one_time_tokens[]
+  sessions                                                        sessions[]
+  webauthn_challenges                                             webauthn_challenges[]
+  webauthn_credentials                                            webauthn_credentials[]
+  community_event_rsvps                                           community_event_rsvps[]
+  community_follows_community_follows_follower_idTousers          community_follows[]       @relation("community_follows_follower_idTousers")
+  community_follows_community_follows_following_idTousers         community_follows[]       @relation("community_follows_following_idTousers")
+  community_notifications_community_notifications_actor_idTousers community_notifications[] @relation("community_notifications_actor_idTousers")
+  community_notifications_community_notifications_user_idTousers  community_notifications[] @relation("community_notifications_user_idTousers")
+  profiles                                                        profiles?
 
   @@index([instance_id])
   @@index([is_anonymous])
@@ -1220,6 +1234,97 @@ model vehicle_price_history {
   @@schema("public")
 }
 
+model user_garages {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String   @db.Uuid
+  make        String   @db.VarChar(100)
+  model       String   @db.VarChar(100)
+  year        Int
+  description String?
+  images      String[] @default([])
+  is_public   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  profiles    profiles @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model community_comments {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_id                 String?                   @db.Uuid
+  user_id                 String?                   @db.Uuid
+  content                 String
+  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  is_edited               Boolean?                  @default(false)
+  community_posts         community_posts?          @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  profiles                profiles?                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  community_notifications community_notifications[]
+
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model community_event_rsvps {
+  event_id         String           @db.Uuid
+  user_id          String           @db.Uuid
+  created_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  community_events community_events @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([event_id, user_id])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model community_events {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id               String?                 @db.Uuid
+  title                 String
+  description           String
+  event_date            DateTime                @db.Timestamptz(6)
+  location              String?
+  cover_image           String?
+  event_type            String?                 @default("meetup")
+  rsvp_count            Int?                    @default(0)
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  community_event_rsvps community_event_rsvps[]
+  profiles              profiles?               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model community_follows {
+  follower_id                                 String    @db.Uuid
+  following_id                                String    @db.Uuid
+  created_at                                  DateTime? @default(now()) @db.Timestamptz(6)
+  users_community_follows_follower_idTousers  users     @relation("community_follows_follower_idTousers", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_community_follows_following_idTousers users     @relation("community_follows_following_idTousers", fields: [following_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([follower_id, following_id])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model community_notifications {
+  id                                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                       String?             @db.Uuid
+  actor_id                                      String?             @db.Uuid
+  type                                          String
+  post_id                                       String?             @db.Uuid
+  comment_id                                    String?             @db.Uuid
+  is_read                                       Boolean?            @default(false)
+  created_at                                    DateTime?           @default(now()) @db.Timestamptz(6)
+  users_community_notifications_actor_idTousers users?              @relation("community_notifications_actor_idTousers", fields: [actor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  community_comments                            community_comments? @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  community_posts                               community_posts?    @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_community_notifications_user_idTousers  users?              @relation("community_notifications_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
 enum aal_level {
   aal1
   aal2
@@ -1463,18 +1568,85 @@ enum vehicle_status {
   @@schema("public")
 }
 
-model user_garages {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id     String   @db.Uuid
-  make        String   @db.VarChar(100)
-  model       String   @db.VarChar(100)
-  year        Int
-  description String?
-  images      String[] @default([])
-  is_public   Boolean  @default(true)
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
+model sourcing_requests {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  customer_id           String?   @db.Uuid
+  assigned_staff_id     String?   @db.Uuid
+  branch_id             String?   @db.Uuid
   
-  profiles    profiles @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // Relations
+  branch                branches? @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  // Step 1: Core Specs (Free-text primary)
+  make                  String
+  model                 String
+  min_year              Int
+  max_year              Int
+  max_mileage           Int?
+  transmission          String?
+  fuel_type             String?
+  
+  // Step 2: Flexibility
+  max_budget            Decimal   @db.Decimal(12, 2)
+  payment_method        String
+  must_have_features    String[]  @default([])
+  exterior_colors       String[]  @default([])
+  
+  // Step 3: Urgency & Contact
+  urgency               String
+  contact_name          String
+  contact_email         String
+  contact_phone         String
+  photos                String[]  @default([])
+  
+  // Tracking
+  status                String    @default("SUBMITTED") // SUBMITTED, SEARCHING, INSPECTING, NEGOTIATING, READY
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
 
+  customer              profiles? @relation("sourcing_requests_customer_idToprofiles", fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  assigned_staff        profiles? @relation("sourcing_requests_assigned_staff_idToprofiles", fields: [assigned_staff_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  matches               sourcing_matches[]
+  
+  @@schema("public")
+}
+
+model sourcing_matches {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  request_id            String    @db.Uuid
+  vehicle_id            String?   @db.Uuid // Optional link to an internal inventory car
+  
+  // Match Details & Score
+  make                  String
+  model                 String
+  year                  Int
+  match_score           Int       @default(95)
+  agent_note            String?
+  budget_note           String?
+  mileage_note          String?
+  color_note            String?
+  
+  // Interactive Condition Report
+  photos                String[]  @default([])
+  video_url             String?
+  diagnostic_checklist  Json?     @default("{}") // e.g. {"Engine": "Passed", "Brakes": "Passed"}
+  imperfections         Json?     @default("[]") // e.g. [{desc: "Scratch", photo: "url"}]
+  
+  // Transparent Financial Breakdown
+  purchase_price        Decimal   @db.Decimal(12, 2)
+  sourcing_fee          Decimal   @db.Decimal(12, 2)
+  logistics_cost        Decimal   @db.Decimal(12, 2)
+  total_otd_cost        Decimal   @db.Decimal(12, 2)
+  
+  // Voting & Lifecycle
+  status                String    @default("PENDING") // PENDING, LIKED, REJECTED, SECURED
+  reject_reason         String?   // Micro-feedback
+  expires_at            DateTime? // 48-hour urgency timer
+
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+
+  request               sourcing_requests @relation(fields: [request_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
   @@schema("public")
 }

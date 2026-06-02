@@ -1,6 +1,7 @@
-import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class CommunityService {
@@ -10,6 +11,7 @@ export class CommunityService {
     private readonly supabaseService: SupabaseService,
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    @Optional() private readonly realtime?: RealtimeGateway,
   ) {}
 
   async getPosts() {
@@ -141,6 +143,12 @@ export class CommunityService {
       this.logger.warn(`Telegram broadcast failed (non-blocking): ${err.message}`)
     );
 
+    // Pub/Sub: Broadcast new post to all community subscribers
+    if (this.realtime) {
+      this.realtime.broadcastToRoom('community', 'new_post', data);
+      this.logger.log(`[Pub/Sub] Broadcasted new_post to community room`);
+    }
+
     return data;
   }
 
@@ -215,9 +223,12 @@ export class CommunityService {
       await this.createCommunityNotification(postData.user_id, userId, 'upvote', postId);
     }
 
+    // Pub/Sub: Broadcast upvote count to all community subscribers
+    if (this.realtime && data) {
+      this.realtime.broadcastToRoom('community', 'post_upvoted', { postId, newCount: data.upvotes });
+    }
+
     return data;
-
-
   }
 
   // ── Events ─────────────────────────────────────────────────────
@@ -295,7 +306,7 @@ export class CommunityService {
     if (userId === actorId) return; // Don't notify yourself
 
     const supabase = this.supabaseService.getClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('community_notifications')
       .insert({
         user_id: userId,
@@ -303,10 +314,19 @@ export class CommunityService {
         type,
         post_id: postId || null,
         comment_id: commentId || null
-      });
+      })
+      .select('id, type, is_read, created_at, post_id, comment_id, actor:actor_id(id, full_name, avatar_url, username), post:post_id(title)')
+      .single();
 
     if (error) {
       this.logger.warn(`Failed to create community notification: ${error.message}`);
+      return;
+    }
+
+    // Pub/Sub: Push notification directly to the target user's room
+    if (this.realtime && data) {
+      this.realtime.broadcastToRoom(`user_${userId}`, 'new_notification', data);
+      this.logger.log(`[Pub/Sub] Pushed new_notification to user_${userId}`);
     }
   }
 

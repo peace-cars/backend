@@ -34,8 +34,10 @@ import { OfficialStampsModule } from './official-stamps/official-stamps.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { CustomOrdersModule } from './custom-orders/custom-orders.module';
 import { CommunityModule } from './community/community.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 import { HealthController } from './common/health.controller';
+import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.module';
 
 @Module({
   imports: [
@@ -47,6 +49,7 @@ import { HealthController } from './common/health.controller';
       limit: 100, // 100 requests per minute
     }]),
     SupabaseModule,
+    PrismaModule,
     // Background queue and realtime
     QueueModule,
     RealtimeModule,
@@ -76,6 +79,7 @@ import { HealthController } from './common/health.controller';
     CustomOrdersModule,
     CommunityModule,
     ProfilesModule,
+    SourcingRequestsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

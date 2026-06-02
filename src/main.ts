@@ -7,11 +7,15 @@ import { GlobalExceptionFilter } from './common/http-exception.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
 import { TransformInterceptor } from './common/transform.interceptor';
 import { TimeoutInterceptor } from './common/timeout.interceptor';
+import { LegacyApiMiddleware } from './common/legacy-api.middleware';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
+  // API Versioning
+  app.setGlobalPrefix('api/v1');
+
   // Security
   app.use(helmet());
 
@@ -19,14 +23,21 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
+  // Legacy API compatibility middleware for old unprefixed clients.
+  // This keeps production compatibility while the app continues to use /api/v1.
+  const legacyApiMiddleware = new LegacyApiMiddleware();
+  app.use(legacyApiMiddleware.use.bind(legacyApiMiddleware));
+
   // Enterprise Input Validation Strategy
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    // Allow primitive type conversion (e.g. "123" -> number)
-    transformOptions: { enableImplicitConversion: true } as any,
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      // Allow primitive type conversion (e.g. "123" -> number)
+      transformOptions: { enableImplicitConversion: true } as any,
+    }),
+  );
 
   // Global Exception Filter to sanitize errors
   app.useGlobalFilters(new GlobalExceptionFilter());
@@ -42,21 +53,28 @@ async function bootstrap() {
 
   // Robust Enterprise Dynamic CORS Configuration
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) return callback(null, true);
-      
+
       const allowedOrigins = [
         'http://localhost:5173', // Client Showroom
         'http://localhost:5174', // Admin God Mode
         'http://localhost:5175', // Staff Inspection PWA
-        'http://localhost',      // Capacitor Android/iOS
+        'http://localhost', // Capacitor Android/iOS
         'capacitor://localhost', // Capacitor iOS
       ];
 
-      const isAllowed = allowedOrigins.includes(origin) ||
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
         origin.endsWith('.vercel.app') ||
         origin.endsWith('.onrender.com') ||
-        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin) ? true : false);
+        (process.env.ALLOWED_ORIGINS &&
+        process.env.ALLOWED_ORIGINS.split(',').includes(origin)
+          ? true
+          : false);
 
       if (isAllowed) {
         callback(null, true);
@@ -73,7 +91,9 @@ async function bootstrap() {
   // Swagger OpenAPI Documentation Configuration
   const config = new DocumentBuilder()
     .setTitle('PeaceCars Enterprise API')
-    .setDescription('Official OpenAPI documentation for the PeaceCars ERP backend.')
+    .setDescription(
+      'Official OpenAPI documentation for the PeaceCars ERP backend.',
+    )
     .setVersion('1.0')
     .addBearerAuth(
       {
@@ -84,10 +104,10 @@ async function bootstrap() {
         description: 'Enter JWT token',
         in: 'header',
       },
-      'JWT-auth', 
+      'JWT-auth',
     )
     .build();
-    
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 

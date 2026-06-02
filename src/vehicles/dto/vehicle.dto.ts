@@ -1,25 +1,31 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsUUID } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsUUID, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateVehicleDto {
   @IsString()
+  @IsNotEmpty()
   make: string;
 
   @IsString()
+  @IsNotEmpty()
   model: string;
 
   @IsNumber()
+  @IsNotEmpty()
   @Type(() => Number)
   year: number;
 
   @IsNumber()
+  @IsNotEmpty()
   @Type(() => Number)
   retail_price_etb: number;
 
   @IsString()
+  @IsNotEmpty()
   duty: string;
 
   @IsString()
+  @IsNotEmpty()
   fuel: string;
 
   @IsOptional()
