@@ -75,6 +75,9 @@ async function bootstrap() {
         'http://localhost:5175', // Staff Inspection PWA
         'http://localhost', // Capacitor Android/iOS
         'capacitor://localhost', // Capacitor iOS
+        'https://peace-cars-website.vercel.app',
+        'https://peacecars.vercel.app',
+        'https://staff-cyan.vercel.app',
       ];
 
       const isAllowed =
