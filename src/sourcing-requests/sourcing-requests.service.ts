@@ -10,7 +10,7 @@ export class SourcingRequestsService {
   ) {}
 
   async createRequest(data: any, customerId?: string) {
-    return this.prisma.sourcing_requests.create({
+    const request = await this.prisma.sourcing_requests.create({
       data: {
         customer_id: customerId || null,
         make: data.make,
@@ -32,14 +32,37 @@ export class SourcingRequestsService {
         status: 'SUBMITTED'
       }
     });
+
+    try {
+      await this.notifications.broadcastToRole(
+        'STAFF',
+        '🚗 New Sourcing Request',
+        `A customer is looking for a ${data.make} ${data.model} (${data.min_year}-${data.max_year}).`,
+        'LEAD_ASSIGNED',
+        request.id
+      );
+    } catch (err) {
+      // Ignore notification failures
+    }
+
+    return request;
   }
 
   async getMyRequests(customerId: string) {
-    return this.prisma.sourcing_requests.findMany({
+    const results = await this.prisma.sourcing_requests.findMany({
       where: { customer_id: customerId },
-      include: { matches: true },
-      orderBy: { created_at: 'desc' }
+      include: {
+        matches: {
+          // Cap matches per request — prevents OFFSET-without-LIMIT full table scan
+          take: 50,
+          orderBy: { created_at: 'desc' },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 100, // A customer shouldn't have more than 100 sourcing requests
     });
+    console.log(`[DEBUG] getMyRequests for customerId ${customerId}: found ${results.length} records.`);
+    return results;
   }
 
   async getAllRequests(branchId?: string, role?: string, scopedBranchIds?: string[], userBranchId?: string) {
@@ -70,9 +93,10 @@ export class SourcingRequestsService {
       include: {
         customer: { select: { id: true, full_name: true, phone_number: true } },
         assigned_staff: { select: { id: true, full_name: true } },
-        branch: { select: { id: true, name: true } }
+        branch: { select: { id: true, name: true } },
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: { created_at: 'desc' },
+      take: 200, // Safety cap — prevents unbounded queries for admin/staff views
     });
   }
 

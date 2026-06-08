@@ -19,33 +19,46 @@ export class ProfilesService {
       throw new NotFoundException('Profile not found');
     }
 
-    // Get garage
-    const { data: garage } = await supabase
-      .from('user_garages')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    // Get recent posts
-    const { data: posts } = await supabase
-      .from('community_posts')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    // Fetch garage and posts concurrently to improve performance
+    const [garageResult, postsResult] = await Promise.all([
+      supabase
+        .from('user_garages')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('community_posts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(10)
+    ]);
 
     return {
       ...profile,
-      garage: garage || [],
-      posts: posts || [],
+      garage: garageResult.data || [],
+      posts: postsResult.data || [],
     };
   }
 
   async updateProfile(userId: string, updates: { username?: string; bio?: string; avatar_url?: string }) {
+    // Strict whitelist — prevent injection of role, id, or other protected fields
+    const ALLOWED_FIELDS = ['username', 'bio', 'avatar_url', 'full_name'];
+    const sanitized: Record<string, any> = {};
+    for (const key of ALLOWED_FIELDS) {
+      if ((updates as any)[key] !== undefined) {
+        sanitized[key] = (updates as any)[key];
+      }
+    }
+
+    if (Object.keys(sanitized).length === 0) {
+      return { message: 'No valid fields to update' };
+    }
+
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('profiles')
-      .update(updates)
+      .update(sanitized)
       .eq('id', userId)
       .select('id, full_name, username, bio, avatar_url, created_at')
       .single();

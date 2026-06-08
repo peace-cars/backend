@@ -15,7 +15,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('SUPABASE_JWT_SECRET') || 'fall-back-secret-never-use-in-prod-1234!!',
+      secretOrKey: (() => {
+        const secret = configService.get<string>('SUPABASE_JWT_SECRET');
+        if (!secret) throw new Error('FATAL: SUPABASE_JWT_SECRET is missing. Refusing to boot with insecure fallback.');
+        return secret;
+      })(),
     });
   }
 
@@ -32,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       .maybeSingle();
     
     return { 
+        id: payload.sub,
         userId: payload.sub, 
         role: profile?.role || payload.user_metadata?.role || 'USER', 
         branchId: profile?.branch_id || payload.user_metadata?.branch_id || null

@@ -32,10 +32,14 @@ export class FinanceService {
 
   async getDailyExchangeRate(): Promise<number> {
     try {
-      // In production, fetch from system_settings table. Fallback for now:
-      return 112.5; 
+      const { data } = await this.supabaseService.getClient()
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'exchange_rate_usd_etb')
+        .single();
+      return data ? parseFloat(data.value) : 125.0; // Fallback to seed value
     } catch {
-      return 112.5;
+      return 125.0;
     }
   }
 

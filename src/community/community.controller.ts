@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, BadRequestException, Query } from '@nestjs/common';
 import { CommunityService } from './community.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -11,8 +11,13 @@ export class CommunityController {
   ) {}
 
   @Get('posts')
-  async getPosts() {
-    return this.communityService.getPosts();
+  async getPosts(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.communityService.getPosts(pageNum, limitNum);
   }
 
   @Get('posts/:id')
@@ -83,7 +88,7 @@ export class CommunityController {
     @Param('id') postId: string,
   ) {
     if (!req.user || !req.user.id) throw new BadRequestException('User not authenticated');
-    return this.communityService.deletePost(req.user.id, postId);
+    return this.communityService.deletePost(req.user.id, postId, req.user.role);
   }
 
   @Patch('comments/:id')

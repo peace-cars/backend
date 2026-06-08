@@ -24,7 +24,7 @@ export class CreateTradeInDto {
 
   @IsOptional()
   @IsObject()
-  vehicleDetails?: any;
+  vehicleDetails?: Record<string, any>;
 
   @IsOptional()
   @IsString()
@@ -49,10 +49,10 @@ export class InspectionUploadDto {
   interior_score: number;
 
   @IsOptional()
-  checklist?: any;
+  checklist?: Record<string, any>;
 
   @IsOptional()
-  ev_data?: any;
+  ev_data?: Record<string, any>;
 
   @IsOptional()
   @IsString()

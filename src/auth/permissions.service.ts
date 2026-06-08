@@ -64,7 +64,7 @@ export class PermissionsService {
 
     const { data: lead } = await client
       .from('trade_in_requests')
-      .select('customer_id, broker_id, branch_id, location_id, assigned_staff_id')
+      .select('customer_id, broker_id, branch_id, assigned_staff_id')
       .eq('id', leadId)
       .single();
 
@@ -75,10 +75,10 @@ export class PermissionsService {
        return true;
     }
 
-    const leadBranchId = lead.branch_id || lead.location_id;
+    const leadBranchId = lead.branch_id;
 
-    const { data: profile } = await client.from('profiles').select('branch_id, location_id, district_id').eq('id', userId).single();
-    const userBranchId = profile?.branch_id || profile?.location_id;
+    const { data: profile } = await client.from('profiles').select('branch_id, district_id').eq('id', userId).single();
+    const userBranchId = profile?.branch_id;
     const userDistrictId = profile?.district_id;
 
     if (userRole === Role.STAFF && userBranchId && leadBranchId === userBranchId) {

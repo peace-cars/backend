@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+*.log
+coverage
+.git
+.vscode
+test
+*.spec.ts
+*.e2e-spec.ts
+peace-cars-firebase-admin.json

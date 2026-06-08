@@ -1,6 +1,6 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, User } from '@supabase/supabase-js';
 import { ConfigService } from '@nestjs/config';
 import { Role } from './roles.enums';
 
@@ -82,7 +82,7 @@ export class AuthService {
     };
   }
 
-  async repairProfile(user: any) {
+  async repairProfile(user: User) {
     const { data: existing } = await this.supabaseService.getClient()
       .from('profiles')
       .select('id')
@@ -138,6 +138,10 @@ export class AuthService {
     }
   }
 
+  /**
+   * Public self-registration — restricted to USER and BROKER roles only.
+   * Staff/DM/GM accounts must be created via createStaffAccount() by an authorized manager.
+   */
   async register(email: string, password: string, fullName: string, role: Role = Role.USER, phoneNumber: string | null = null, branchId?: string, avatarUrl?: string) {
     const authClient = createClient(
       this.configService.get<string>('SUPABASE_URL') || '',
@@ -145,10 +149,11 @@ export class AuthService {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const safeRoles = [Role.USER, Role.BROKER, Role.GENERAL_MANAGER, Role.DISTRICT_MANAGER, Role.STAFF];
-    if (!safeRoles.includes(role)) {
-      this.logger.warn(`Unauthorized role request: ${email} tried to register as ${role}`);
-      throw new ForbiddenException('Unauthorized role assignment.');
+    // SECURITY: Only USER and BROKER can self-register. All other roles require GM provisioning.
+    const selfRegistrableRoles = [Role.USER, Role.BROKER];
+    if (!selfRegistrableRoles.includes(role)) {
+      this.logger.warn(`[SECURITY] Blocked self-registration attempt: ${email} tried to register as ${role}`);
+      throw new ForbiddenException('This role cannot be self-assigned. Contact your administrator.');
     }
 
     const finalFullName = fullName || 'New Partner';
@@ -230,5 +235,120 @@ export class AuthService {
     }
 
     return profile;
+  }
+
+  async refresh(refreshToken: string) {
+    const authClient = createClient(
+      this.configService.get<string>('SUPABASE_URL') || '',
+      this.configService.get<string>('SUPABASE_KEY') || '',
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { data, error } = await authClient.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data.session) {
+      this.logger.warn(`Token refresh failed: ${error?.message}`);
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+      .eq('id', data.user!.id)
+      .maybeSingle();
+
+    return {
+      session: {
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at,
+      },
+      user: {
+        id: data.user!.id,
+        email: data.user!.email,
+      },
+      profile: profile || null,
+    };
+  }
+
+  /**
+   * Admin-only staff provisioning — creates accounts with elevated roles.
+   * Only callable by GENERAL_MANAGER via a protected controller endpoint.
+   */
+  async createStaffAccount(
+    email: string,
+    password: string,
+    fullName: string,
+    role: Role,
+    branchId?: string,
+    phoneNumber?: string,
+    avatarUrl?: string,
+  ) {
+    const allowedProvisionRoles = [Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR];
+    if (!allowedProvisionRoles.includes(role)) {
+      throw new BadRequestException(`Role "${role}" cannot be provisioned via this endpoint. Use public registration for USER/BROKER.`);
+    }
+
+    const authClient = createClient(
+      this.configService.get<string>('SUPABASE_URL') || '',
+      this.configService.get<string>('SUPABASE_KEY') || '',
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { data: authData, error: authError } = await authClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: role,
+          phone_number: phoneNumber || null,
+          avatar_url: avatarUrl || null,
+        },
+      },
+    });
+
+    if (authError || !authData.user) {
+      this.logger.error(`Staff provisioning failed for ${email}: ${authError?.message}`);
+      throw new BadRequestException(authError?.message || 'Staff account creation failed');
+    }
+
+    const { data: roleRecord } = await this.supabaseService.getClient()
+      .from('roles')
+      .select('id')
+      .eq('name', role)
+      .maybeSingle();
+
+    const profileData: Record<string, any> = {
+      id: authData.user.id,
+      full_name: fullName,
+      phone_number: phoneNumber || null,
+      role: role,
+      role_id: roleRecord?.id || null,
+      is_verified: true,
+      is_inspector_verified: false,
+      gamification_points: 0,
+      branch_id: branchId || null,
+      avatar_url: avatarUrl || null,
+    };
+
+    const { error: profileError } = await this.supabaseService.getClient()
+      .from('profiles')
+      .upsert(profileData);
+
+    if (profileError) {
+      this.logger.error(`Staff profile creation failed: ${profileError.message}`);
+      throw new BadRequestException(`Profile initialization failed: ${profileError.message}`);
+    }
+
+    this.logger.log(`[ADMIN] Staff account provisioned: ${email} as ${role}`);
+
+    return {
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        role: role,
+      },
+      profile: profileData,
+    };
   }
 }

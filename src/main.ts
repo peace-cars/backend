@@ -9,6 +9,8 @@ import { TransformInterceptor } from './common/transform.interceptor';
 import { TimeoutInterceptor } from './common/timeout.interceptor';
 import { LegacyApiMiddleware } from './common/legacy-api.middleware';
 import { json, urlencoded } from 'express';
+import cookieParser from 'cookie-parser';
+import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,8 +18,13 @@ async function bootstrap() {
   // API Versioning
   app.setGlobalPrefix('api/v1');
 
-  // Security
-  app.use(helmet());
+  // Security Hardening
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    xssFilter: true,
+    noSniff: true,
+  }));
 
   // Increase payload limits for Base64 image uploads
   app.use(json({ limit: '50mb' }));
@@ -27,6 +34,9 @@ async function bootstrap() {
   // This keeps production compatibility while the app continues to use /api/v1.
   const legacyApiMiddleware = new LegacyApiMiddleware();
   app.use(legacyApiMiddleware.use.bind(legacyApiMiddleware));
+
+  // Cookie Parser for HttpOnly Auth Cookies
+  app.use(cookieParser());
 
   // Enterprise Input Validation Strategy
   app.useGlobalPipes(
@@ -69,12 +79,8 @@ async function bootstrap() {
 
       const isAllowed =
         allowedOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app') ||
-        origin.endsWith('.onrender.com') ||
-        (process.env.ALLOWED_ORIGINS &&
-        process.env.ALLOWED_ORIGINS.split(',').includes(origin)
-          ? true
-          : false);
+        /^https:\/\/peacecars-.*\.vercel\.app$/.test(origin) || // Strict regex matching for Vercel environments
+        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin));
 
       if (isAllowed) {
         callback(null, true);
@@ -110,6 +116,16 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
+
+  // Distributed Realtime Gateway
+  if (process.env.REDIS_URL) {
+    const redisIoAdapter = new RedisIoAdapter(app);
+    await redisIoAdapter.connectToRedis(process.env.REDIS_URL);
+    app.useWebSocketAdapter(redisIoAdapter);
+    console.log('[Backend] Redis WebSockets Adapter enabled.');
+  } else {
+    console.log('[Backend] REDIS_URL missing — falling back to standard in-memory WebSockets.');
+  }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');

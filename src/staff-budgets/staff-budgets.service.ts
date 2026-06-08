@@ -42,7 +42,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!staff_budgets_requester_id_fkey(full_name, role, branch_id, branches(name))
+          profiles!inner(full_name, role, branch_id, branches(name))
         `)
         .eq('profiles.branch_id', locationId);
 
@@ -51,7 +51,7 @@ export class StaffBudgetsService {
         return [];
       }
       
-      return (data || []).filter((b: any) => b.profiles?.branch_id === locationId);
+      return data || [];
     } catch (e) {
       this.logger.error(`Failed to fetch branch budgets: ${e.message}`);
       return [];
@@ -82,7 +82,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!staff_budgets_requester_id_fkey(full_name, role, district_id, branches(name))
+          profiles!inner(full_name, role, district_id, branches(name))
         `)
         .eq('profiles.district_id', districtId);
 
@@ -90,7 +90,7 @@ export class StaffBudgetsService {
         this.logger.error(`Error fetching district budgets: ${error.message}`);
         return [];
       }
-      return (data || []).filter((b: any) => b.profiles?.district_id === districtId);
+      return data || [];
     } catch (e) {
       this.logger.error(`Failed to fetch district budgets: ${e.message}`);
       return [];

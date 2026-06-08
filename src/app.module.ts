@@ -35,6 +35,8 @@ import { TelegramModule } from './telegram/telegram.module';
 import { CustomOrdersModule } from './custom-orders/custom-orders.module';
 import { CommunityModule } from './community/community.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { UploadModule } from './upload/upload.module';
 
 import { HealthController } from './common/health.controller';
 import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.module';
@@ -44,10 +46,13 @@ import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.mo
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    // Distributed rate limiting (in-memory; Redis throttler requires TCP which Upstash REST doesn't expose)
     ThrottlerModule.forRoot([{
       ttl: 60000,
-      limit: 100, // 100 requests per minute
+      limit: 100,
     }]),
+    // Global Redis via Upstash REST SDK — provides caching across all modules
+    RedisModule,
     SupabaseModule,
     PrismaModule,
     // Background queue and realtime
@@ -80,6 +85,7 @@ import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.mo
     CommunityModule,
     ProfilesModule,
     SourcingRequestsModule,
+    UploadModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

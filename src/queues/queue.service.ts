@@ -31,7 +31,12 @@ export class QueueService {
     private readonly supabaseService: SupabaseService,
     @Optional() private readonly fcmService?: FCMService
   ) {
-    const redisUrl = this.config.get<string>('REDIS_URL') || 'redis://127.0.0.1:6379';
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    if (!redisUrl) {
+      this.logger.warn('REDIS_URL missing — background jobs (BullMQ) will be disabled.');
+      return;
+    }
+
     if (Queue) {
       this.queue = new Queue('peacecars', { connection: { url: redisUrl } });
       this.logger.log('BullMQ queue initialized.');

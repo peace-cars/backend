@@ -66,8 +66,7 @@ export class FinancePlansService {
     const supabase = this.supabaseService.getClient();
     let query = supabase.from('finance_plans').select(`
       *,
-      vehicles(make, model, year, price),
-      bank_partners(name, logo_url),
+      vehicles(make, model, year, retail_price_etb),
       profiles:customer_id(full_name, phone)
     `).order('created_at', { ascending: false });
 
@@ -77,8 +76,11 @@ export class FinancePlansService {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
-    return data;
+    if (error) {
+      this.logger.error(`Failed to fetch finance plans: ${error.message}`);
+      return []; // Return empty array instead of crashing
+    }
+    return data ?? [];
   }
 
   async updateStatus(planId: string, status: string, notes?: string) {

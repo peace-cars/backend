@@ -30,8 +30,8 @@ export class StaffBudgetsController {
     }
 
     if (req.user.role === Role.DISTRICT_MANAGER) {
-      if (!req.user.districtId) return [];
-      return this.budgetsService.getDistrictBudgets(req.user.districtId);
+      if (!req.user.branchId) return [];
+      return this.budgetsService.getBranchBudgets(req.user.branchId);
     }
     if (req.user.role === Role.STAFF) {
       return this.budgetsService.getUserBudgets(req.user.id);

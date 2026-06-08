@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -11,27 +12,48 @@ export class CommunityService {
     private readonly supabaseService: SupabaseService,
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    private redisService: RedisService,
     @Optional() private readonly realtime?: RealtimeGateway,
   ) {}
 
-  async getPosts() {
-    const supabase = this.supabaseService.getClient();
-    const { data, error } = await supabase
-      .from('community_posts')
-      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles(full_name, avatar_url, username), community_comments(count)')
-      .order('created_at', { ascending: false });
+  private readonly COMMUNITY_CACHE_KEY = 'community:posts:v2'; // v2: explicit FK hints for community_post_upvotes ambiguity
 
-    if (error) {
-      throw new BadRequestException(error.message);
+  async getPosts(page?: number, limit?: number) {
+    let cachedPosts = await this.redisService.get<any[]>(this.COMMUNITY_CACHE_KEY);
+
+    if (!cachedPosts) {
+      const supabase = this.supabaseService.getClient();
+      const { data, error } = await supabase
+        .from('community_posts')
+        .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles!community_posts_user_id_fkey(full_name, avatar_url, username), community_comments(count)')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new BadRequestException(error.message);
+      }
+      cachedPosts = data || [];
+      await this.redisService.set(this.COMMUNITY_CACHE_KEY, cachedPosts);
     }
-    return data;
+
+    if (page !== undefined && limit !== undefined) {
+      const startIndex = (page - 1) * limit;
+      const paginatedData = cachedPosts.slice(startIndex, startIndex + limit);
+      return {
+        data: paginatedData,
+        total: cachedPosts.length,
+        page,
+        limit
+      };
+    }
+
+    return cachedPosts;
   }
 
   async getPostById(postId: string) {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('community_posts')
-      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles(full_name, avatar_url, username), community_comments(count)')
+      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles!community_posts_user_id_fkey(full_name, avatar_url, username), community_comments(count)')
       .eq('id', postId)
       .single();
 
@@ -45,7 +67,7 @@ export class CommunityService {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('community_comments')
-      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles(full_name, avatar_url, username)')
+      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles!community_comments_user_id_fkey(full_name, avatar_url, username)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
 
@@ -66,7 +88,7 @@ export class CommunityService {
         post_id: postId,
         content,
       })
-      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles(full_name, avatar_url, username)')
+      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles!community_comments_user_id_fkey(full_name, avatar_url, username)')
       .single();
 
     if (error) {
@@ -88,7 +110,7 @@ export class CommunityService {
       .from('community_comments')
       .update({ content })
       .match({ id: commentId, user_id: userId }) // Ensure only author can edit
-      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles(full_name, avatar_url, username)')
+      .select('id, post_id, user_id, content, created_at, updated_at, is_edited, profiles!community_comments_user_id_fkey(full_name, avatar_url, username)')
       .single();
 
     if (error) {
@@ -131,7 +153,7 @@ export class CommunityService {
         post_type: postType,
         tags,
       })
-      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles(full_name, avatar_url, username)')
+      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles!community_posts_user_id_fkey(full_name, avatar_url, username)')
       .single();
 
     if (error) {
@@ -142,6 +164,9 @@ export class CommunityService {
     this.broadcastPostToTelegram(data, userId).catch(err =>
       this.logger.warn(`Telegram broadcast failed (non-blocking): ${err.message}`)
     );
+
+    // Invalidate cache
+    await this.redisService.del(this.COMMUNITY_CACHE_KEY);
 
     // Pub/Sub: Broadcast new post to all community subscribers
     if (this.realtime) {
@@ -162,7 +187,7 @@ export class CommunityService {
       .from('community_posts')
       .update(updates)
       .match({ id: postId, user_id: userId }) // Ensure only author can edit
-      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles(full_name, avatar_url, username)')
+      .select('id, title, content, upvotes, created_at, updated_at, is_edited, images, youtube_url, post_type, tags, user_id, profiles!community_posts_user_id_fkey(full_name, avatar_url, username)')
       .single();
 
     if (error) {
@@ -171,16 +196,28 @@ export class CommunityService {
     return data;
   }
 
-  async deletePost(userId: string, postId: string) {
+  async deletePost(userId: string, postId: string, userRole?: string) {
     const supabase = this.supabaseService.getClient();
-    const { error } = await supabase
-      .from('community_posts')
-      .delete()
-      .match({ id: postId, user_id: userId }); // Ensure only author can delete
+
+    let query = supabase.from('community_posts').delete().eq('id', postId);
+    
+    // If not admin, restrict deletion to author only
+    if (userRole !== 'ADMIN') {
+      query = query.eq('user_id', userId);
+    }
+
+    const { error, data } = await query.select();
 
     if (error) {
       throw new BadRequestException(error.message);
     }
+    
+    if (!data || data.length === 0) {
+      throw new BadRequestException('Post not found or unauthorized');
+    }
+
+    // Invalidate cache
+    await this.redisService.del(this.COMMUNITY_CACHE_KEY);
     return { success: true };
   }
 
@@ -206,29 +243,50 @@ export class CommunityService {
   async upvotePost(userId: string, postId: string) {
     const supabase = this.supabaseService.getClient();
 
-    // Atomic Increment via Database RPC to prevent Race Conditions
-    const { error } = await supabase.rpc('increment_community_upvotes', { post_id: postId });
+    // Atomic toggle: one vote per user, handled at DB level to prevent race conditions
+    const { data, error } = await supabase.rpc('toggle_community_upvote', {
+      p_post_id: postId,
+      p_user_id: userId,
+    });
 
     if (error) {
-      this.logger.error(`Failed to upvote post ${postId}: ${error.message}`);
+      this.logger.error(`Failed to toggle upvote on post ${postId}: ${error.message}`);
       throw new BadRequestException('Failed to upvote post. ' + error.message);
     }
 
-    // Return current count for client to reflect
-    const { data } = await supabase.from('community_posts').select('upvotes').eq('id', postId).single();
+    const result = data as { voted: boolean; upvotes: number };
 
-    // Notify the author
-    const { data: postData } = await supabase.from('community_posts').select('user_id').eq('id', postId).single();
-    if (postData?.user_id) {
-      await this.createCommunityNotification(postData.user_id, userId, 'upvote', postId);
+    // Invalidate cache
+    await this.redisService.del(this.COMMUNITY_CACHE_KEY);
+
+    // Only notify on first vote (not on toggle-off)
+    if (result.voted) {
+      const { data: postData } = await supabase
+        .from('community_posts')
+        .select('user_id')
+        .eq('id', postId)
+        .single();
+      if (postData?.user_id) {
+        await this.createCommunityNotification(postData.user_id, userId, 'upvote', postId);
+      }
     }
 
-    // Pub/Sub: Broadcast upvote count to all community subscribers
-    if (this.realtime && data) {
-      this.realtime.broadcastToRoom('community', 'post_upvoted', { postId, newCount: data.upvotes });
+    // Pub/Sub: Broadcast the new upvote count to all community subscribers
+    if (this.realtime) {
+      this.realtime.broadcastToRoom('community', 'post_upvoted', { postId, newCount: result.upvotes, voted: result.voted });
     }
 
-    return data;
+    return result;
+  }
+
+  async hasUpvoted(userId: string, postId: string): Promise<boolean> {
+    const supabase = this.supabaseService.getClient();
+    const { data } = await supabase
+      .from('community_post_upvotes')
+      .select('post_id')
+      .match({ post_id: postId, user_id: userId })
+      .maybeSingle();
+    return !!data;
   }
 
   // ── Events ─────────────────────────────────────────────────────
@@ -404,26 +462,35 @@ export class CommunityService {
   async rsvpEvent(userId: string, eventId: string) {
     const supabase = this.supabaseService.getClient();
 
-    // Track who RSVP'd in the junction table (upsert to prevent duplicates)
-    const { error: rsvpError } = await supabase
-      .from('community_event_rsvps')
-      .upsert({ event_id: eventId, user_id: userId }, { onConflict: 'event_id,user_id' });
-
-    if (rsvpError) {
-      this.logger.warn(`RSVP tracking insert failed (non-blocking): ${rsvpError.message}`);
-    }
-
-    // Atomic RSVP via Database RPC to prevent Race Conditions
-    const { error } = await supabase.rpc('increment_event_rsvp', { event_id: eventId });
+    // Atomic RSVP: Only increments counter if user hasn't RSVP'd before.
+    // The safe_rsvp_event RPC handles the INSERT + conditional counter increment atomically.
+    const { data, error } = await supabase.rpc('safe_rsvp_event', {
+      p_event_id: eventId,
+      p_user_id: userId,
+    });
 
     if (error) {
       this.logger.error(`Failed to RSVP event ${eventId}: ${error.message}`);
       throw new BadRequestException('Failed to RSVP event. ' + error.message);
     }
 
-    // Return current count for client to reflect
-    const { data } = await supabase.from('community_events').select('rsvp_count').eq('id', eventId).single();
-    return data;
+    const result = data as { rsvped: boolean; rsvp_count: number };
+
+    if (!result.rsvped) {
+      throw new BadRequestException('You have already RSVP\'d to this event.');
+    }
+
+    return { rsvp_count: result.rsvp_count, rsvped: true };
+  }
+
+  async hasRsvped(userId: string, eventId: string): Promise<boolean> {
+    const supabase = this.supabaseService.getClient();
+    const { data } = await supabase
+      .from('community_event_rsvps')
+      .select('event_id')
+      .match({ event_id: eventId, user_id: userId })
+      .maybeSingle();
+    return !!data;
   }
 
   async getEventRsvps(eventId: string) {

@@ -4,7 +4,28 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: true,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        'http://localhost:5173', 
+        'http://localhost:5174', 
+        'http://localhost:5175', 
+        'http://localhost', 
+        'capacitor://localhost', 
+      ];
+
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        /^https:\/\/peacecars-.*\.vercel\.app$/.test(origin) ||
+        (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin));
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
   }
 })

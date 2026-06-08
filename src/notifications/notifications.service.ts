@@ -129,9 +129,9 @@ export class NotificationsService {
         );
       }
 
-      // If no staff assigned yet, notify all GMs about unhandled message
+      // If no staff assigned yet, notify all staff at the branch (or globally if no branch scoping yet)
       if (!conv.assigned_staff_id && conv.customer_id === senderId) {
-        await this.broadcastToRole('GENERAL_MANAGER', 
+        await this.broadcastToRole('STAFF', 
           '📩 New customer inquiry',
           `${senderName} asked about ${vehicleName}: "${preview}"`,
           'NEW_MESSAGE',

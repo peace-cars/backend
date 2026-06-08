@@ -1,17 +1,17 @@
-const { createClient } = require('@supabase/supabase-js');
+const { Client } = require('pg');
 
-const url = "https://upylurzbdtuagbejyyuz.supabase.co";
-const key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVweWx1cnpiZHR1YWdiZWp5eXV6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDk0Njg2OCwiZXhwIjoyMDkwNTIyODY4fQ.tAPFGkL5ByIGu3zchJ044XXJnwMn69SCQxJrdp98dm8";
+async function main() {
+  const client = new Client({
+    connectionString: "postgresql://postgres.upylurzbdtuagbejyyuz:imhK3YrE2gv5G%28.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+  });
+  await client.connect();
+  
+  const tradeIns = await client.query('SELECT * FROM trade_in_requests ORDER BY created_at DESC LIMIT 5');
+  console.log('Latest Trade Ins:', tradeIns.rows.map(r => ({id: r.id, customer_id: r.customer_id, created_at: r.created_at})));
 
-const supabase = createClient(url, key);
+  const sourcings = await client.query('SELECT * FROM sourcing_requests ORDER BY created_at DESC LIMIT 5');
+  console.log('Latest Sourcings:', sourcings.rows.map(r => ({id: r.id, customer_id: r.customer_id, created_at: r.created_at})));
 
-async function checkVehicles() {
-  const { data, error } = await supabase.from('vehicles').select('id, make, model').limit(5);
-  if (error) {
-    console.error('Error:', error);
-    return;
-  }
-  console.log('Vehicles:', JSON.stringify(data, null, 2));
+  await client.end();
 }
-
-checkVehicles();
+main().catch(console.error);

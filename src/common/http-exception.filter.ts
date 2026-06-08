@@ -40,12 +40,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.warn(`[Req-ID: ${correlationId}] [${request.method}] ${request.url} - ${status}: ${JSON.stringify(message)}`);
     }
 
-    // Sanitize response in production
-    const isProduction = process.env.NODE_ENV === 'production';
+    // Strict Security: Always sanitize 500 errors to prevent data leakage
     const clientResponse: any = typeof message === 'object' ? { ...message } : { message };
 
-    if (isProduction && status === HttpStatus.INTERNAL_SERVER_ERROR) {
+    if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
       clientResponse['message'] = 'An unexpected error occurred. Our team has been notified.';
+      delete clientResponse['details']; // Ensure no DB details leak
     }
 
     // Standardize error code if not provided

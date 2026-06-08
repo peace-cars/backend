@@ -16,16 +16,33 @@ export class VehiclesController {
   // Public Endpoint: Shows only RETAIL models for the Client Frontend
   @ApiOperation({ summary: 'Get public showroom inventory', description: 'Returns a list of vehicles available for retail sale.' })
   @ApiResponse({ status: 200, description: 'List of showroom vehicles.' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @Get('showroom')
-  async getShowroom() {
-    const rawData = await this.vehiclesService.getShowroom();
-    return rawData.map(v => ({
+  async getShowroom(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    const result = await this.vehiclesService.getShowroom(pageNum, limitNum);
+    
+    const mapVehicle = (v: any) => ({
       ...v,
       images: (Array.isArray(v.images) && v.images.length > 0) ? v.images : 
               (Array.isArray(v.gallery) && v.gallery.length > 0) ? v.gallery :
               (Array.isArray(v.image_urls) && v.image_urls.length > 0) ? v.image_urls :
               ["https://images.unsplash.com/photo-1550520920-aa136006dcce?auto=format&fit=crop&q=80&w=2938"],
-    }));
+    });
+
+    if (pageNum && limitNum) {
+      return {
+        ...result,
+        data: (result as any).data.map(mapVehicle)
+      };
+    }
+    
+    return (result as any[]).map(mapVehicle);
   }
 
   @ApiOperation({ summary: 'Get details of a specific showroom vehicle' })
@@ -61,11 +78,20 @@ export class VehiclesController {
   @ApiOperation({ summary: 'Get all vehicles', description: 'Returns all vehicles within the user\'s authorization scope.' })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({ name: 'branchId', required: false, description: 'Filter by specific branch ID (Requires GM/DM role)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @Get()
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.view')
-  async getAllVehicles(@Req() req: any, @Query('branchId') branchId?: string) {
-    return this.vehiclesService.getAll(req.user, branchId);
+  async getAllVehicles(
+    @Req() req: any, 
+    @Query('branchId') branchId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.vehiclesService.getAll(req.user, branchId, pageNum, limitNum);
   }
 
   @ApiOperation({ summary: 'Create a new vehicle record' })

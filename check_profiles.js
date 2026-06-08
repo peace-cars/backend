@@ -1,23 +1,14 @@
-const { createClient } = require('@supabase/supabase-js');
-const url = 'https://upylurzbdtuagbejyyuz.supabase.co';
-const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVweWx1cnpiZHR1YWdiZWp5eXV6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDk0Njg2OCwiZXhwIjoyMDkwNTIyODY4fQ.tAPFGkL5ByIGu3zchJ044XXJnwMn69SCQxJrdp98dm8';
-const supabase = createClient(url, key);
+const { Client } = require('pg');
 
-async function check() {
-  const { data, error } = await supabase.rpc('exec_sql', { 
-    sql: `
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'profiles' 
-      ORDER BY ordinal_position
-    ` 
+async function main() {
+  const client = new Client({
+    connectionString: "postgresql://postgres.upylurzbdtuagbejyyuz:imhK3YrE2gv5G%28.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
   });
+  await client.connect();
+  
+  const profiles = await client.query('SELECT id, full_name, role, created_at FROM profiles ORDER BY created_at DESC LIMIT 5');
+  console.log('Latest Profiles:', profiles.rows);
 
-  if (error) {
-    console.error('Check failed:', error.message);
-  } else {
-    console.log('Profiles columns:', JSON.stringify(data, null, 2));
-  }
+  await client.end();
 }
-
-check();
+main().catch(console.error);

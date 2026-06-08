@@ -36,13 +36,9 @@ export class TradeInRequestsController {
     return this.service.createLead(req.user.id, data);
   }
 
-  @ApiOperation({ summary: 'Get details of a specific trade-in lead' })
-  @Get(':id')
-  @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
-  getLeadById(@Req() req: any, @Param('id') id: string) {
-    return this.service.getLeadById(req.user.id, req.user.role, id);
-  }
-
+  // IMPORTANT: Static-prefix routes MUST be declared before wildcard `:id`
+  // otherwise NestJS will match "customer" as the :id parameter.
+  @ApiOperation({ summary: 'Get trade-in leads for a specific customer' })
   @Get('customer/:id')
   @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getCustomerLeads(@Req() req: any, @Param('id') id: string) {
@@ -51,6 +47,13 @@ export class TradeInRequestsController {
        throw new ForbiddenException('You cannot view leads belonging to another customer.');
     }
     return this.service.getCustomerLeads(req.user.id, id);
+  }
+
+  @ApiOperation({ summary: 'Get details of a specific trade-in lead' })
+  @Get(':id')
+  @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
+  getLeadById(@Req() req: any, @Param('id') id: string) {
+    return this.service.getLeadById(req.user.id, req.user.role, id);
   }
 
   @Post('inspection')

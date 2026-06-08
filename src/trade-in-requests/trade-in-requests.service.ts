@@ -5,6 +5,7 @@ import { Role } from '../auth/roles.enums';
 import { PermissionsService } from '../auth/permissions.service';
 import { EvaluationEngineService } from './evaluation-engine.service';
 import { AlertDispatcherService } from '../notifications/alert-dispatcher.service';
+import { InspectionUploadDto } from './dto/trade-in.dto';
 
 @Injectable()
 export class TradeInRequestsService {
@@ -150,7 +151,7 @@ export class TradeInRequestsService {
     return result;
   }
 
-  async processInspectionUpload(userId: string, data: any) {
+  async processInspectionUpload(userId: string, data: InspectionUploadDto) {
     const admin = this.adminSupabase.getClient();
     const { 
       leadId, 
@@ -204,26 +205,30 @@ export class TradeInRequestsService {
       .eq('trade_in_id', leadId)
       .eq('assigned_to', userId);
 
-    const riskFlag = this.evaluationEngine.evaluateRisk(mechanical_score, exterior_score, interior_score);
+    const assessment = this.evaluationEngine.evaluateRisk({ 
+      mechanical: mechanical_score, 
+      exterior: exterior_score, 
+      interior: interior_score 
+    });
     let newStatus = 'MANAGER_REVIEW';
 
     const { error: updError } = await admin
       .from('trade_in_requests')
       .update({ 
         status: newStatus,
-        staff_notes: riskFlag ? `[RISK GUARDIAN: ${riskFlag}]` : 'Standard Evaluation Passed.'
+        staff_notes: assessment.flags.length > 0 ? `[RISK GUARDIAN: ${assessment.flags.join(', ')}]` : 'Standard Evaluation Passed.'
       })
       .eq('id', leadId);
 
     if (updError) throw new BadRequestException(updError.message);
 
-    if (riskFlag && profile?.branch_id) {
-      await this.alertDispatcher.dispatchInspectionAlert(profile.branch_id, riskFlag, leadId);
+    if (assessment.riskLevel === 'HIGH' && profile?.branch_id) {
+      await this.alertDispatcher.dispatchInspectionAlert(profile.branch_id, assessment.flags.join(', '), leadId);
     }
 
     return { 
       success: true, 
-      riskProfile: riskFlag || 'LOW_RISK', 
+      riskProfile: assessment.riskLevel, 
       timestamp: new Date() 
     };
   }
@@ -287,7 +292,9 @@ export class TradeInRequestsService {
       .eq('customer_id', customerId)
       .order('created_at', { ascending: false });
 
-    if (error) throw new BadRequestException(error.message);
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
     return data;
   }
 
@@ -312,6 +319,8 @@ export class TradeInRequestsService {
           status: 'ASSIGNED',
           description: 'Technical Evaluation & Appraisal'
         });
+        
+        await this.alertDispatcher.dispatchTaskAssignedAlert(assignedStaffId, leadId);
       }
     }
 
