@@ -40,6 +40,12 @@ export class ScopeGuard implements CanActivate {
     const body = request.body;
     const scopedBranchIds: string[] = user.scopedBranchIds || [];
 
+    // GENERAL_MANAGER scope enforcement
+    if (user.role === Role.GENERAL_MANAGER) {
+      // GM has global access, no explicit target branch denial applies here.
+      // Explicitly document this rather than letting it fall through implicitly.
+    }
+
     // DISTRICT_MANAGER scope enforcement
     if (user.role === Role.DISTRICT_MANAGER) {
       // If the request targets a specific branch, ensure it's within the DM's district

@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, UseInterceptors } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
 import { Public } from '../auth/public.decorator';
+import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interceptor';
 
 @Controller('locations')
 @UseGuards(RolesGuard, ScopeGuard)
@@ -15,6 +16,8 @@ export class BranchManagementController {
  
   @Public()
   @Get('public')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(3600)
   async getPublic() {
     const { data, error } = await this.supabaseService.getClient()
       .from('branches')
@@ -34,6 +37,8 @@ export class BranchManagementController {
   }
 
   @Get()
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(300)
   async getAll(@Req() req: any) {
     const client = this.supabaseService.getClient();
     let query = client.from('branches').select('id, name, address, district_id');
@@ -84,6 +89,8 @@ export class BranchManagementController {
   }
 
   @Get('my-scope')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(120)
   async getMyScope(@Req() req: any) {
      const client = this.supabaseService.getClient();
      let branchName = 'Global HQ';
@@ -104,6 +111,8 @@ export class BranchManagementController {
 
   @Get('districts/overview')
   @Roles(Role.GENERAL_MANAGER)
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(300)
   async getDistrictOverview() {
     const client = this.supabaseService.getClient();
     const { data, error } = await client.from('district_overview').select('*');
@@ -113,6 +122,8 @@ export class BranchManagementController {
 
   @Get(':id/staff')
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(60)
   async getBranchStaff(@Param('id') branchId: string) {
     const client = this.supabaseService.getClient();
     
@@ -215,9 +226,16 @@ export class BranchManagementController {
   @Patch(':id')
   @Roles(Role.GENERAL_MANAGER)
   async update(@Param('id') id: string, @Body() data: any) {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.district_id !== undefined) updateData.district_id = data.district_id;
+
+    if (Object.keys(updateData).length === 0) return { success: true };
+
     const { error } = await this.supabaseService.getClient()
       .from('branches')
-      .update(data)
+      .update(updateData)
       .eq('id', id);
     if (error) return { success: false, message: error.message };
     return { success: true };

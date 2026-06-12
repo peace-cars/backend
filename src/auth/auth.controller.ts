@@ -108,12 +108,12 @@ export class AuthController {
     return { success: true, message: 'Logged out successfully' };
   }
 
-  @ApiOperation({ summary: 'Refresh session using httpOnly cookie' })
+  @ApiOperation({ summary: 'Refresh session using httpOnly cookie or body payload' })
   @Post('refresh')
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies?.refresh_token;
+    const refreshToken = req.cookies?.refresh_token || req.body?.refresh_token;
     if (!refreshToken) {
-      throw new UnauthorizedException('No refresh token cookie found.');
+      throw new UnauthorizedException('No refresh token provided.');
     }
 
     const result = await this.authService.refresh(refreshToken);

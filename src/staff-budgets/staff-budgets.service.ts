@@ -42,7 +42,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!inner(full_name, role, branch_id, branches(name))
+          profiles!staff_budgets_requester_id_fkey!inner(full_name, role, branch_id, branches(name))
         `)
         .eq('profiles.branch_id', locationId);
 
@@ -82,7 +82,7 @@ export class StaffBudgetsService {
         .from('staff_budgets')
         .select(`
           *, 
-          profiles!inner(full_name, role, district_id, branches(name))
+          profiles!staff_budgets_requester_id_fkey!inner(full_name, role, district_id, branches(name))
         `)
         .eq('profiles.district_id', districtId);
 

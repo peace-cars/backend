@@ -31,7 +31,31 @@ export class AlertDispatcherService {
     }
   }
 
-  async dispatchTaskAssignedAlert(staffId: string, leadId: string) {
+  async dispatchBranchManagerAlert(branchId: string, title: string, message: string, type: string, referenceId?: string) {
+    const admin = this.supabaseService.getClient();
+
+    const { data: loc } = await admin
+      .from('branches')
+      .select('district(manager_id)')
+      .eq('id', branchId)
+      .single();
+      
+    const district = loc?.district as any;
+    if (district?.manager_id) {
+      const { error } = await admin.from('notifications').insert({
+        recipient_id: district.manager_id, 
+        title,
+        message,
+        type,
+        reference_id: referenceId
+      });
+      if (error) {
+        this.logger.error(`Failed to dispatch branch manager alert: ${error.message}`);
+      }
+    }
+  }
+
+  async dispatchTaskAssignedAlert(staffId: string, leadId: string, branchId?: string) {
     const admin = this.supabaseService.getClient();
     const { error } = await admin.from('notifications').insert({
       recipient_id: staffId, 
@@ -42,6 +66,17 @@ export class AlertDispatcherService {
     });
     if (error) {
       this.logger.error(`Failed to dispatch task alert: ${error.message}`);
+    }
+
+    // CC the Branch/District Manager if branchId is provided
+    if (branchId) {
+      await this.dispatchBranchManagerAlert(
+        branchId,
+        'Staff Assignment',
+        `A staff member was assigned to evaluate a trade-in request.`,
+        'LEAD_ASSIGNED',
+        leadId
+      );
     }
   }
 }

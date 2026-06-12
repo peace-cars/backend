@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, BadRequestException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, BadRequestException, Query, UseInterceptors } from '@nestjs/common';
 import { CommunityService } from './community.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
+import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interceptor';
 
 @Controller('community')
 export class CommunityController {
@@ -11,6 +12,8 @@ export class CommunityController {
   ) {}
 
   @Get('posts')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   async getPosts(
     @Query('page') page?: string,
     @Query('limit') limit?: string,

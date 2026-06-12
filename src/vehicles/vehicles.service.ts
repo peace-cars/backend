@@ -6,6 +6,7 @@ import { FsmService } from '../common/fsm.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
+import { AlertDispatcherService } from '../notifications/alert-dispatcher.service';
 
 @Injectable()
 export class VehiclesService {
@@ -17,6 +18,7 @@ export class VehiclesService {
     private fsmService: FsmService,
     private telegramService: TelegramService,
     private redisService: RedisService,
+    private alertDispatcher: AlertDispatcherService,
     @Optional() private readonly realtime?: RealtimeGateway,
   ) {}
 
@@ -361,6 +363,20 @@ export class VehiclesService {
         });
       }
 
+      if (updated.status === 'SOLD' && existing.status !== 'SOLD') {
+        if (updated.branch_id) {
+          this.alertDispatcher.dispatchBranchManagerAlert(
+            updated.branch_id,
+            'Vehicle Sold',
+            `${updated.make} ${updated.model} has been marked as sold.`,
+            'VEHICLE_SOLD',
+            updated.id
+          ).catch(err => {
+            this.logger.error('Failed to dispatch branch manager sold alert', err);
+          });
+        }
+      }
+
       if (updated.status === 'SHOWROOM' || existing.status === 'SHOWROOM') {
         await this.redisService.del(this.SHOWROOM_CACHE_KEY);
       }
@@ -386,18 +402,24 @@ export class VehiclesService {
    * Calculates: Net Profit = Sale Price - (Purchase Cost + Reconditioning Expenses)
    * Uses the vehicle_profitability view if available, falls back to manual calculation.
    */
-  async getProfitabilityReport() {
+  async getProfitabilityReport(branchId?: string) {
     try {
       const client = this.supabaseScoped.getClient();
       
       // Try the computed view first (Migration 010)
-      const { data: viewData, error: viewError } = await client
+      let viewQuery = client
         .from('vehicle_profitability')
         .select('*')
         .eq('status', 'SOLD')
         .order('sold_date', { ascending: false });
 
-      if (!viewError && viewData) {
+      if (branchId) {
+        viewQuery = viewQuery.eq('branch_id', branchId);
+      }
+
+      const { data: viewData, error: viewError } = await viewQuery;
+
+      if (!viewError && viewData && viewData.length > 0) {
         return viewData.map((v: any) => ({
           id: v.id,
           vehicle: `${v.year} ${v.make} ${v.model}`,
@@ -414,11 +436,17 @@ export class VehiclesService {
       }
 
       // Fallback: manual calculation from vehicles table
-      const { data, error } = await client
+      let query = client
         .from('vehicles')
         .select('id, make, model, year, retail_price_etb, unit_cost, sold_date, branch_id, created_at')
         .eq('status', 'SOLD')
         .order('sold_date', { ascending: false });
+      
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      const { data, error } = await query;
       
       if (error) {
         this.logger.error(`Supabase Error: ${error.message} (${error.code})`);
@@ -453,17 +481,23 @@ export class VehiclesService {
    * Returns vehicles that have been in stock for more than `thresholdDays` days.
    * Default threshold: 60 days (configurable).
    */
-  async getAgedInventory(thresholdDays = 60) {
+  async getAgedInventory(thresholdDays = 60, branchId?: string) {
     try {
       const client = this.supabaseScoped.getClient();
       const cutoffDate = new Date(Date.now() - thresholdDays * 86400000).toISOString();
       
-      const { data, error } = await client
+      let query = client
         .from('vehicles')
         .select('id, make, model, year, retail_price_etb, unit_cost, floor_plan_loan, maturity_date, created_at, branch_id, branches:branch_id(name)')
         .neq('status', 'SOLD')
         .lt('created_at', cutoffDate)
         .order('created_at', { ascending: true });
+
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
+      
+      const { data, error } = await query;
       
       if (error) {
         this.logger.error(`Supabase Error: ${error.message} (${error.code})`);

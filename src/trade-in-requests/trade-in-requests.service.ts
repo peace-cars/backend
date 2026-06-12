@@ -83,10 +83,12 @@ export class TradeInRequestsService {
       status: req.status,
       photos: req.photos,
       askingPrice: req.user_asking_price_etb,
+      finalOffer: req.final_dealer_offer_etb,
       inspections: req.inspections,
       vehicleDetails: req.vehicle_details || {},
       contactPhone: req.contact_phone,
       contactCity: req.contact_city,
+      branch_id: req.branch_id,
     }));
   }
 
@@ -139,6 +141,7 @@ export class TradeInRequestsService {
       status: req.status,
       photos: req.photos,
       askingPrice: req.user_asking_price_etb,
+      finalOffer: req.final_dealer_offer_etb,
       user_asking_price_etb: req.user_asking_price_etb,
       vehicleDetails: req.vehicle_details || {},
       contactPhone: req.contact_phone,
@@ -402,6 +405,158 @@ export class TradeInRequestsService {
 
     if (error) throw new BadRequestException(error.message);
     return data;
+  }
+
+  // ─── Client: respond to a dealer offer ───────────────────────────────────────
+  async respondToOffer(
+    customerId: string,
+    leadId: string,
+    decision: 'ACCEPT' | 'REJECT' | 'COUNTER',
+    counterPrice?: number,
+  ) {
+    const supabase = this.adminSupabase.getClient();
+
+    const { data: lead, error: fetchErr } = await supabase
+      .from('trade_in_requests')
+      .select('status, customer_id, final_dealer_offer_etb')
+      .eq('id', leadId)
+      .single();
+
+    if (fetchErr || !lead) throw new BadRequestException('Trade-in request not found.');
+    if (lead.customer_id !== customerId)
+      throw new ForbiddenException('You do not own this trade-in request.');
+    if (!['OFFER_MADE', 'NEGOTIATING'].includes(lead.status))
+      throw new BadRequestException(`Cannot respond to offer when status is "${lead.status}".`);
+
+    let updatePayload: Record<string, any>;
+
+    if (decision === 'ACCEPT') {
+      updatePayload = { status: 'ACCEPTED' };
+    } else if (decision === 'REJECT') {
+      updatePayload = { status: 'CLOSED_LOST' };
+    } else {
+      // COUNTER
+      if (!counterPrice || counterPrice <= 0)
+        throw new BadRequestException('A valid counter-offer price is required.');
+      updatePayload = {
+        status: 'NEGOTIATING',
+        user_asking_price_etb: counterPrice, // Represents client's latest counter position
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('trade_in_requests')
+      .update(updatePayload)
+      .eq('id', leadId)
+      .select()
+      .single();
+
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  // ─── Admin: finalize acquisition → add to vehicle fleet ──────────────────────
+  async acquireToFleet(
+    adminUserId: string,
+    leadId: string,
+    vehicleData: {
+      vin?: string;
+      make?: string;
+      model?: string;
+      year?: number;
+      fuel?: string;
+      duty?: string;
+      retailPrice?: number;
+      vehicleStatus?: string; // REFURBISHMENT | SHOWROOM | SOLD
+    },
+  ) {
+    const supabase = this.adminSupabase.getClient();
+
+    const { data: lead, error: fetchErr } = await supabase
+      .from('trade_in_requests')
+      .select('*, inspections(*)')
+      .eq('id', leadId)
+      .single();
+
+    if (fetchErr || !lead) throw new BadRequestException('Trade-in request not found.');
+    if (lead.status !== 'ACCEPTED')
+      throw new BadRequestException('Trade-in must be in ACCEPTED status before acquisition.');
+
+    const details = (lead.vehicle_details as any) || {};
+    const nameParts = (lead.vehicle_make_model || '').split(' ');
+    const fleetStatus = vehicleData.vehicleStatus || 'REFURBISHMENT';
+
+    const { data: vehicle, error: vErr } = await supabase
+      .from('vehicles')
+      .insert({
+        vin_chassis: vehicleData.vin || `TI-${leadId.substring(0, 8).toUpperCase()}`,
+        make: vehicleData.make || nameParts[0] || 'Unknown',
+        model: vehicleData.model || nameParts.slice(1).join(' ') || 'Unknown',
+        year: vehicleData.year || Number(details.year) || new Date().getFullYear(),
+        fuel: (vehicleData.fuel || details.fuel_type || 'PETROL').toUpperCase(),
+        duty: (vehicleData.duty || details.duty_status || 'DUTY_PAID').toUpperCase(),
+        current_mileage: Number(details.mileage) || 0,
+        retail_price_etb: vehicleData.retailPrice || lead.final_dealer_offer_etb || 0,
+        images: lead.photos || [],
+        branch_id: lead.branch_id,
+        status: fleetStatus,
+      })
+      .select('id')
+      .single();
+
+    if (vErr) throw new BadRequestException(`Fleet entry failed: ${vErr.message}`);
+
+    // Mark trade-in as reconditioning
+    await supabase
+      .from('trade_in_requests')
+      .update({ status: 'RECONDITIONING' })
+      .eq('id', leadId);
+
+    // Generate Commissions
+    if (fleetStatus === 'SHOWROOM' || fleetStatus === 'SOLD' || fleetStatus === 'REFURBISHMENT') {
+      const { data: settings } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'evaluation_commission_percent')
+        .single();
+        
+      const commissionPercent = parseFloat(settings?.value || '0.01');
+      const commissionAmount = (vehicleData.retailPrice || lead.final_dealer_offer_etb || 0) * commissionPercent;
+
+      const sourcerId = lead.broker_id || lead.assigned_staff_id;
+      let inspectorId = null;
+
+      if (lead.inspections && lead.inspections.length > 0) {
+        // Assume the first inspection is the most relevant
+        inspectorId = lead.inspections[0].inspector_id;
+      }
+
+      // 1. Commission for the Inspector
+      if (inspectorId) {
+        await supabase.from('commissions').insert({
+          beneficiary_id: inspectorId,
+          vehicle_id: vehicle.id,
+          type: 'STAFF_INSPECTION_BONUS',
+          amount_etb: commissionAmount,
+          branch_id: lead.branch_id,
+          is_paid: false,
+        });
+      }
+
+      // 2. Commission for the Sourcer (if different from the inspector, or if there is no inspector)
+      if (sourcerId && sourcerId !== inspectorId) {
+        await supabase.from('commissions').insert({
+          beneficiary_id: sourcerId,
+          vehicle_id: vehicle.id,
+          type: lead.broker_id ? 'BROKER_REFERRAL' : 'STAFF_INSPECTION_BONUS',
+          amount_etb: commissionAmount,
+          branch_id: lead.branch_id,
+          is_paid: false,
+        });
+      }
+    }
+
+    return { success: true, vehicleId: vehicle.id, vehicleStatus: fleetStatus };
   }
 
   async getLeadById(userId: string, userRole: Role, leadId: string) {

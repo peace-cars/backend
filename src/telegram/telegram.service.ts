@@ -40,8 +40,12 @@ export class TelegramService implements OnModuleInit {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set — Telegram bot is DISABLED.');
       return;
     }
-    // Decide mode: 'polling' or 'webhook'. Default to 'polling' in development
-    const mode = this.config.get<string>('TELEGRAM_MODE') || (process.env.NODE_ENV === 'production' ? 'webhook' : 'polling');
+    // Decide mode: 'polling' or 'webhook'. Default to 'polling' in development or if webhook URL is missing
+    let mode = this.config.get<string>('TELEGRAM_MODE');
+    if (!mode) {
+      const hasWebhookUrl = !!this.config.get<string>('TELEGRAM_WEBHOOK_URL');
+      mode = (process.env.NODE_ENV === 'production' && hasWebhookUrl) ? 'webhook' : 'polling';
+    }
 
     if (mode === 'polling') {
       this.bot = new TelegramBot(token, { polling: true });

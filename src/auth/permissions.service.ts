@@ -81,8 +81,13 @@ export class PermissionsService {
     const userBranchId = profile?.branch_id;
     const userDistrictId = profile?.district_id;
 
-    if (userRole === Role.STAFF && userBranchId && leadBranchId === userBranchId) {
-      return true;
+    if (userRole === Role.STAFF) {
+      if (userBranchId && leadBranchId === userBranchId) {
+        return true;
+      }
+      if (!userBranchId && !leadBranchId) {
+        return true;
+      }
     }
 
     if (userRole === Role.DISTRICT_MANAGER) {
@@ -97,6 +102,10 @@ export class PermissionsService {
         if (branch?.district_id === userDistrictId) {
           return true;
         }
+      }
+
+      if (!userBranchId && !userDistrictId && !leadBranchId) {
+        return true;
       }
     }
 

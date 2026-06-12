@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, Query, UseInterceptors } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
 import { CreatePersonDto, UpdatePersonDto } from './dto/people.dto';
+import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interceptor';
 
 @Controller('people')
 @UseGuards(RolesGuard, ScopeGuard)
@@ -15,6 +16,8 @@ export class PeopleController {
 
   @Get()
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   async getAll(@Req() req: any, @Query('branchId') branchId?: string) {
     try {
       let query = this.supabaseService.getClient()
@@ -60,6 +63,33 @@ export class PeopleController {
       this.logger.error(`Critical failure fetching people: ${e.message}`);
       return [];
     }
+  }
+
+  @Get(':id')
+  @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(60)
+  async getOne(@Param('id') id: string, @Req() req: any) {
+    const { data: profile, error } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('*, branches(name)')
+      .eq('id', id)
+      .single();
+
+    if (error || !profile) return null;
+
+    // Scope check
+    if (req.user.role === Role.DISTRICT_MANAGER && !req.user.scopedBranchIds?.includes(profile.branch_id)) {
+      return null;
+    }
+
+    return {
+      ...profile,
+      fullName: profile.full_name,
+      phone: profile.phone_number,
+      locationName: profile.branches?.name || 'Unassigned',
+      isActive: profile.is_verified
+    };
   }
 
   @Post()

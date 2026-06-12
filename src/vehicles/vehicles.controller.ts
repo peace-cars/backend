@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Req, Body, UseGuards, Param, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Req, Body, UseGuards, Param, Query, ParseUUIDPipe, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { VehiclesService } from './vehicles.service';
 import { RolesGuard } from '../auth/roles.guard';
@@ -7,6 +7,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RequiresPermission } from '../auth/permissions.decorator';
 import { Role } from '../auth/roles.enums';
 import { CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle.dto';
+import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interceptor';
 
 @ApiTags('Vehicles / Inventory')
 @Controller('vehicles')
@@ -19,6 +20,8 @@ export class VehiclesController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @Get('showroom')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(300)
   async getShowroom(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -48,6 +51,8 @@ export class VehiclesController {
   @ApiOperation({ summary: 'Get details of a specific showroom vehicle' })
   @ApiResponse({ status: 200, description: 'Vehicle details.' })
   @Get('showroom/:id')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(60)
   async getVehicleDetails(@Param('id', ParseUUIDPipe) id: string) {
     const v = await this.vehiclesService.getVehicleById(id);
     return {
@@ -64,15 +69,19 @@ export class VehiclesController {
   @Get('profitability')
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.audit')
-  async getProfitability() {
-    return this.vehiclesService.getProfitabilityReport();
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(60)
+  async getProfitability(@Query('branchId') branchId?: string) {
+    return this.vehiclesService.getProfitabilityReport(branchId);
   }
 
   @Get('aged-inventory')
   @UseGuards(RolesGuard, ScopeGuard)
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
-  async getAgedInventory() {
-    return this.vehiclesService.getAgedInventory(60);
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(120)
+  async getAgedInventory(@Query('branchId') branchId?: string) {
+    return this.vehiclesService.getAgedInventory(60, branchId);
   }
 
   @ApiOperation({ summary: 'Get all vehicles', description: 'Returns all vehicles within the user\'s authorization scope.' })
@@ -83,6 +92,8 @@ export class VehiclesController {
   @Get()
   @UseGuards(RolesGuard, ScopeGuard)
   @RequiresPermission('inventory.view')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   async getAllVehicles(
     @Req() req: any, 
     @Query('branchId') branchId?: string,

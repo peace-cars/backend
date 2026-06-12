@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, ForbiddenException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, ForbiddenException, Query, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TradeInRequestsService } from './trade-in-requests.service';
 import { RolesGuard } from '../auth/roles.guard';
@@ -6,6 +6,7 @@ import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/roles.enums';
 import { CreateTradeInDto, InspectionUploadDto, UpdateStatusDto } from './dto/trade-in.dto';
+import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interceptor';
 
 @ApiTags('Trade-Ins / Vehicle Acquisitions')
 @ApiBearerAuth('JWT-auth')
@@ -17,6 +18,8 @@ export class TradeInRequestsController {
   @ApiOperation({ summary: 'Get all trade-in leads', description: 'Returns all leads within the user\'s authorization scope.' })
   @ApiQuery({ name: 'branchId', required: false, description: 'Filter by specific branch ID (Requires GM/DM role)' })
   @Get()
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   @Roles(Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
   getAllLeads(@Req() req: any, @Query('branchId') branchId?: string) {
     return this.service.getAllLeads(req.user.id, req.user.role, req.user.scopedBranchIds, branchId);
@@ -24,6 +27,8 @@ export class TradeInRequestsController {
 
   @ApiOperation({ summary: 'Get trade-in leads assigned to current user' })
   @Get('me')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   @Roles(Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getAssignedLeads(@Req() req: any) {
      return this.service.getAssignedLeads(req.user.id);
@@ -40,6 +45,8 @@ export class TradeInRequestsController {
   // otherwise NestJS will match "customer" as the :id parameter.
   @ApiOperation({ summary: 'Get trade-in leads for a specific customer' })
   @Get('customer/:id')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getCustomerLeads(@Req() req: any, @Param('id') id: string) {
     // Only the customer themselves or higher staff can read this
@@ -51,6 +58,8 @@ export class TradeInRequestsController {
 
   @ApiOperation({ summary: 'Get details of a specific trade-in lead' })
   @Get(':id')
+  @UseInterceptors(UpstashCacheInterceptor)
+  @CacheTTL(30)
   @Roles(Role.USER, Role.BROKER, Role.STAFF, Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
   getLeadById(@Req() req: any, @Param('id') id: string) {
     return this.service.getLeadById(req.user.id, req.user.role, id);
@@ -86,5 +95,27 @@ export class TradeInRequestsController {
     @Req() req: any
   ) {
     return this.service.rejectLead(id, data.reason, req.user.role);
+  }
+
+  @ApiOperation({ summary: 'Client responds to a dealer offer (accept / reject / counter)' })
+  @Patch(':id/respond')
+  @Roles(Role.USER, Role.BROKER)
+  respondToOffer(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { decision: 'ACCEPT' | 'REJECT' | 'COUNTER'; counterPrice?: number },
+  ) {
+    return this.service.respondToOffer(req.user.id, id, body.decision, body.counterPrice);
+  }
+
+  @ApiOperation({ summary: 'Admin confirms acquisition and adds vehicle to fleet (requires ACCEPTED status)' })
+  @Patch(':id/acquire')
+  @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER)
+  acquireToFleet(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { vin?: string; make?: string; model?: string; year?: number; fuel?: string; duty?: string; retailPrice?: number },
+  ) {
+    return this.service.acquireToFleet(req.user.id, id, body);
   }
 }

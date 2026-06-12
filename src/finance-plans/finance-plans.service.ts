@@ -67,7 +67,7 @@ export class FinancePlansService {
     let query = supabase.from('finance_plans').select(`
       *,
       vehicles(make, model, year, retail_price_etb),
-      profiles:customer_id(full_name, phone)
+      profiles:customer_id(full_name, phone_number)
     `).order('created_at', { ascending: false });
 
     // If not staff, only show their own plans

@@ -36,7 +36,8 @@ export class StaffTasksController {
   @Get('my-tasks')
   @Roles('STAFF', 'DISTRICT_MANAGER', 'GENERAL_MANAGER', 'FINANCE_AUDITOR')
   async getMyTasks(@Request() req: any) {
-    return this.tasksService.getMyTasks(req.user.userId);
+    console.log('User requesting my-tasks:', req.user);
+    return this.tasksService.getMyTasks(req.user.userId || req.user.id);
   }
 
   @Get('all')
