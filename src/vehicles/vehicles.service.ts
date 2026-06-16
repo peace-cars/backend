@@ -229,6 +229,7 @@ export class VehiclesService {
         unit_cost: data.unit_cost ? Number(data.unit_cost) : 0,
         floor_plan_loan: data.floor_plan_loan || false,
         maturity_date: data.maturity_date || null,
+        internal_documents: data.internal_documents || [],
       };
 
       const { data: newVehicle, error } = await client
@@ -330,6 +331,7 @@ export class VehiclesService {
       if (data.unit_cost !== undefined) { const c = Number(data.unit_cost); if (isNaN(c)) throw new BadRequestException('Invalid unit_cost value'); payload.unit_cost = c; }
       if (data.floor_plan_loan !== undefined) payload.floor_plan_loan = data.floor_plan_loan;
       if (data.maturity_date !== undefined) payload.maturity_date = data.maturity_date || null;
+      if (data.internal_documents !== undefined) payload.internal_documents = data.internal_documents;
 
       // Auto-set sold_date when status transitions to SOLD
       if (data.status === 'SOLD') {

@@ -149,8 +149,9 @@ export class AuthService {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // SECURITY: Only USER and BROKER can self-register. All other roles require GM provisioning.
-    const selfRegistrableRoles = [Role.USER, Role.BROKER];
+    // SECURITY: USER, BROKER, and STAFF can self-register.
+    // DM/GM/FINANCE_AUDITOR accounts require GM provisioning via createStaffAccount().
+    const selfRegistrableRoles = [Role.USER, Role.BROKER, Role.STAFF];
     if (!selfRegistrableRoles.includes(role)) {
       this.logger.warn(`[SECURITY] Blocked self-registration attempt: ${email} tried to register as ${role}`);
       throw new ForbiddenException('This role cannot be self-assigned. Contact your administrator.');

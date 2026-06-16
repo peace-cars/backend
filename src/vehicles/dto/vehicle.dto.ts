@@ -79,6 +79,7 @@ export class CreateVehicleDto {
   floor_plan_loan?: number;
   @IsOptional() @IsString() maturity_date?: string;
   @IsOptional() @IsString() sold_date?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) internal_documents?: string[];
 }
 
 export class UpdateVehicleDto {
@@ -155,4 +156,5 @@ export class UpdateVehicleDto {
   floor_plan_loan?: number;
   @IsOptional() @IsString() maturity_date?: string;
   @IsOptional() @IsString() sold_date?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) internal_documents?: string[];
 }

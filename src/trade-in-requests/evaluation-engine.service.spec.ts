@@ -1,5 +1,6 @@
 import { EvaluationEngineService } from './evaluation-engine.service';
-import { InspectionScores, VehicleDetails } from '../common/types/trade-in.types';
+import { InspectionScores } from '../common/types/trade-in.types';
+import { VehicleDetails } from '../common/types/vehicle.types';
 
 describe('EvaluationEngineService', () => {
   let service: EvaluationEngineService;
@@ -15,10 +16,10 @@ describe('EvaluationEngineService', () => {
       interior: 80
     };
 
-    const vehicle: VehicleDetails = {
+    const vehicle = {
       isEV: false,
       mileage: 50000
-    };
+    } as VehicleDetails;
 
     const result = service.evaluateRisk(scores, vehicle);
     
@@ -35,10 +36,10 @@ describe('EvaluationEngineService', () => {
       battery_health: 90
     };
 
-    const vehicle: VehicleDetails = {
+    const vehicle = {
       isEV: true,
       mileage: 50000
-    };
+    } as VehicleDetails;
 
     const result = service.evaluateRisk(scores, vehicle);
     
@@ -77,10 +78,10 @@ describe('EvaluationEngineService', () => {
       battery_health: 60
     };
 
-    const vehicle: VehicleDetails = {
+    const vehicle = {
       isEV: true,
       mileage: 50000
-    };
+    } as VehicleDetails;
 
     const result = service.evaluateRisk(scores, vehicle);
     expect(result.riskLevel).toBe('HIGH');
@@ -94,10 +95,10 @@ describe('EvaluationEngineService', () => {
       interior: 80
     };
 
-    const vehicle: VehicleDetails = {
+    const vehicle = {
       isEV: false,
       mileage: 160000
-    };
+    } as VehicleDetails;
 
     const result = service.evaluateRisk(scores, vehicle);
     expect(result.flags).toContain('HIGH_MILEAGE_ALERT');

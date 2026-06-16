@@ -73,6 +73,8 @@ async function bootstrap() {
         'http://localhost:5173', // Client Showroom
         'http://localhost:5174', // Admin God Mode
         'http://localhost:5175', // Staff Inspection PWA
+        'http://localhost:5176', // Admin (overflow port)
+        'http://localhost:5177', // overflow
         'http://localhost', // Capacitor Android/iOS
         'capacitor://localhost', // Capacitor iOS
         'https://peace-cars-website.vercel.app',

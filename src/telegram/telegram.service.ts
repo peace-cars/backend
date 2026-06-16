@@ -43,8 +43,7 @@ export class TelegramService implements OnModuleInit {
     // Decide mode: 'polling' or 'webhook'. Default to 'polling' in development or if webhook URL is missing
     let mode = this.config.get<string>('TELEGRAM_MODE');
     if (!mode) {
-      const hasWebhookUrl = !!this.config.get<string>('TELEGRAM_WEBHOOK_URL');
-      mode = (process.env.NODE_ENV === 'production' && hasWebhookUrl) ? 'webhook' : 'polling';
+      mode = 'polling'; // FORCE POLLING UNTIL WEBHOOK ISSUES ON RENDER ARE FIXED
     }
 
     if (mode === 'polling') {
