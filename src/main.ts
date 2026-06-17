@@ -75,8 +75,10 @@ async function bootstrap() {
         'http://localhost:5175', // Staff Inspection PWA
         'http://localhost:5176', // Admin (overflow port)
         'http://localhost:5177', // overflow
-        'http://localhost', // Capacitor Android/iOS
+        'http://localhost', // Capacitor Android (http scheme)
+        'https://localhost', // Capacitor Android (https scheme)
         'capacitor://localhost', // Capacitor iOS
+        'ionic://localhost', // Ionic/Capacitor alternate
         'https://peace-cars-website.vercel.app',
         'https://peacecars.vercel.app',
         'https://staff-cyan.vercel.app',
