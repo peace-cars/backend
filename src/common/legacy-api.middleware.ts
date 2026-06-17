@@ -1,7 +1,33 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 
-const LEGACY_API_PREFIXES = ['vehicles'];
+const LEGACY_API_PREFIXES = [
+  'vehicles',
+  'community',
+  'profiles',
+  'notifications',
+  'sourcing-requests',
+  'trade-in-requests',
+  'messages',
+  'auth',
+  'upload',
+  'settings',
+  'people',
+  'locations',
+  'custom-orders',
+  'staff-performance',
+  'staff-tasks',
+  'staff-budgets',
+  'finance-plans',
+  'commissions',
+  'commission-workflow',
+  'approval-logs',
+  'acquisitions',
+  'vehicle-expenses',
+  'inspection-reports',
+  'official-stamps',
+  'documents',
+];
 
 @Injectable()
 export class LegacyApiMiddleware implements NestMiddleware {

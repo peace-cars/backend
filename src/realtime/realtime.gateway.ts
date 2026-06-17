@@ -8,11 +8,18 @@ import { Logger } from '@nestjs/common';
       if (!origin) return callback(null, true);
 
       const allowedOrigins = [
-        'http://localhost:5173', 
-        'http://localhost:5174', 
-        'http://localhost:5175', 
-        'http://localhost', 
-        'capacitor://localhost', 
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:5175',
+        'http://localhost:5176',
+        'http://localhost:5177',
+        'http://localhost',
+        'https://localhost', // Capacitor Android (androidScheme: https)
+        'capacitor://localhost', // Capacitor iOS
+        'ionic://localhost',
+        'https://peace-cars-website.vercel.app',
+        'https://peacecars.vercel.app',
+        'https://staff-cyan.vercel.app',
       ];
 
       const isAllowed =
