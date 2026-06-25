@@ -100,3 +100,27 @@ export class UpdateProfileDto {
   @IsString()
   avatarUrl?: string;
 }
+
+/**
+ * One-time bootstrap DTO — creates the first GENERAL_MANAGER account.
+ * Only succeeds when the profiles table is completely empty.
+ */
+export class BootstrapDto {
+  @ApiProperty({ example: 'admin@peacecars.com' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'SecurePass123!', minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @ApiProperty({ example: 'System Administrator' })
+  @IsString()
+  fullName: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+}

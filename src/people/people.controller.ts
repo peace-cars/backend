@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, Query, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Logger, Req, Query, UseInterceptors } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { RedisService } from '../redis/redis.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -12,7 +13,10 @@ import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interc
 export class PeopleController {
   private readonly logger = new Logger(PeopleController.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly redisService: RedisService
+  ) {}
 
   @Get()
   @Roles(Role.DISTRICT_MANAGER, Role.GENERAL_MANAGER, Role.FINANCE_AUDITOR)
@@ -231,5 +235,29 @@ export class PeopleController {
         return { success: true, isActive: newVerifiedStatus };
     }
     return { success: false, message: 'Profile not found' };
+  }
+
+  @Delete(':id')
+  @Roles(Role.GENERAL_MANAGER)
+  async deletePerson(@Param('id') id: string) {
+    const client = this.supabaseService.getClient();
+    
+    // Delete from public.notifications, audit_logs, and public.profiles to prevent foreign key errors
+    await client.from('notifications').delete().eq('user_id', id);
+    await client.from('audit_logs').delete().eq('actor_id', id);
+    await client.from('profiles').delete().eq('id', id);
+
+    // Then delete from auth.users via admin api
+    const { error: authError } = await client.auth.admin.deleteUser(id);
+    
+    if (authError) {
+      this.logger.error(`Failed to delete user ${id}: ${authError.message}`);
+      return { success: false, message: authError.message };
+    }
+
+    // Invalidate caches for people
+    await this.redisService.delPattern('cache:*:/api/v1/people*');
+
+    return { success: true };
   }
 }

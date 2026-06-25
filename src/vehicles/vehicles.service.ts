@@ -29,7 +29,7 @@ export class VehiclesService {
       let cachedShowroom = await this.redisService.get<any[]>(this.SHOWROOM_CACHE_KEY);
 
       if (!cachedShowroom) {
-        const client = this.supabaseScoped.getClient();
+        const client = this.supabaseAdmin.getClient();
         const { data, error } = await client
           .from('vehicles')
           .select(`
@@ -87,7 +87,7 @@ export class VehiclesService {
 
   async getVehicleById(id: string, user?: any) {
     try {
-      const client = this.supabaseScoped.getClient();
+      const client = this.supabaseAdmin.getClient();
       let query = client
         .from('vehicles')
         .select(`
@@ -108,7 +108,12 @@ export class VehiclesService {
 
       const { data, error } = await query.single();
       
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'PGRST116') {
+          throw new NotFoundException(`Vehicle ${id} not found`);
+        }
+        throw error;
+      }
       if (!data) throw new NotFoundException(`Vehicle ${id} not found`);
 
       const result: any = {
@@ -136,7 +141,7 @@ export class VehiclesService {
 
   async getAll(user: any, explicitBranchId?: string, page?: number, limit?: number) {
     try {
-      const client = this.supabaseScoped.getClient();
+      const client = this.supabaseAdmin.getClient();
       let query = client
         .from('vehicles')
         .select(`
@@ -202,7 +207,7 @@ export class VehiclesService {
 
   async createVehicle(data: CreateVehicleDto) {
     try {
-      const client = this.supabaseScoped.getClient();
+      const client = this.supabaseAdmin.getClient();
       
       // Clean payload: Only include columns verified to exist in the DB schema
       const payload: Record<string, any> = {
@@ -264,7 +269,7 @@ export class VehiclesService {
 
   async update(id: string, data: UpdateVehicleDto) {
     try {
-      const client = this.supabaseScoped.getClient();
+      const client = this.supabaseAdmin.getClient();
 
       // 1. Fetch current status and VIN of the vehicle to enforce FSM transition validation
       const { data: existing, error: fetchErr } = await client
@@ -596,7 +601,7 @@ export class VehiclesService {
 
   async delete(id: string) {
     try {
-      const client = this.supabaseScoped.getClient();
+      const client = this.supabaseAdmin.getClient();
       const { error } = await client.from('vehicles').delete().eq('id', id);
       if (error) throw error;
       return { success: true };

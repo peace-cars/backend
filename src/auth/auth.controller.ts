@@ -2,7 +2,7 @@ import { Controller, Post, Body, Get, Req, Res, UseGuards, UnauthorizedException
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, CreateStaffDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, CreateStaffDto, BootstrapDto } from './dto/auth.dto';
 import { RolesGuard } from './roles.guard';
 import { Role } from './roles.enums';
 import { Roles } from './roles.decorator';
@@ -68,6 +68,21 @@ export class AuthController {
   }
 
   /**
+   * One-time system bootstrap — creates the first GM account.
+   * Automatically disabled once any account exists in the database.
+   */
+  @ApiOperation({ summary: 'Bootstrap first GM account (only works on empty database)' })
+  @Post('bootstrap')
+  async bootstrap(@Body() body: BootstrapDto) {
+    return this.authService.bootstrapFirstAdmin(
+      body.email,
+      body.password,
+      body.fullName,
+      body.phoneNumber,
+    );
+  }
+
+  /**
    * GM-only endpoint for provisioning Staff, DM, GM, and Auditor accounts.
    * Cannot be called by anonymous or low-privilege users.
    */
@@ -118,6 +133,38 @@ export class AuthController {
 
     const result = await this.authService.refresh(refreshToken);
     
+    res.cookie('access_token', result.session.access_token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie('refresh_token', result.session.refresh_token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    return result;
+  }
+
+  @ApiOperation({ summary: 'Sync OAuth login — called after Google redirect to create/fetch profile' })
+  @Post('oauth-sync')
+  async oauthSync(
+    @Body() body: { access_token: string; refresh_token: string; default_role?: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!body.access_token || !body.refresh_token) {
+      throw new UnauthorizedException('Missing OAuth tokens.');
+    }
+
+    const result = await this.authService.oauthSync(
+      body.access_token,
+      body.refresh_token,
+      body.default_role,
+    );
+
     res.cookie('access_token', result.session.access_token, {
       httpOnly: true,
       secure: true,

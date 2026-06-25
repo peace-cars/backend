@@ -82,7 +82,58 @@ export class AuthService {
     };
   }
 
-  async repairProfile(user: User) {
+  async oauthSync(accessToken: string, refreshToken: string, defaultRole: string = 'USER') {
+    const authClient = createClient(
+      this.configService.get<string>('SUPABASE_URL') || '',
+      this.configService.get<string>('SUPABASE_KEY') || '',
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { data: { user }, error } = await authClient.auth.getUser(accessToken);
+    if (error || !user) {
+      this.logger.warn(`OAuth sync failed: ${error?.message}`);
+      throw new UnauthorizedException('Invalid OAuth token');
+    }
+
+    let { data: profile } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (!profile) {
+      this.logger.log(`OAuth: Profile missing for ${user.email}, initiating repair with role ${defaultRole}...`);
+      await this.repairProfile(user, defaultRole);
+      
+      const { data: recoveredProfile } = await this.supabaseService.getClient()
+        .from('profiles')
+        .select('id, role, full_name, phone_number, branch_id, is_verified, is_inspector_verified, gamification_points')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!recoveredProfile) {
+        throw new UnauthorizedException('OAuth successful but profile creation failed.');
+      }
+      profile = recoveredProfile;
+    }
+
+    this.logger.log(`OAuth sync success for ${user.email}`);
+    
+    return {
+      session: {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      },
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      profile,
+    };
+  }
+
+  async repairProfile(user: User, defaultRole?: string) {
     const { data: existing } = await this.supabaseService.getClient()
       .from('profiles')
       .select('id')
@@ -92,7 +143,7 @@ export class AuthService {
 
     this.logger.warn(`Ghost User detected: Repairing profile for ${user.id} (${user.email})`);
 
-    const finalRole = user.user_metadata?.role || 'STAFF';
+    const finalRole = user.user_metadata?.role || defaultRole || 'USER';
     
     const uuidDigits = user.id.replace(/[^0-9a-f]/g, '').slice(0, 9);
     const uniquePhone = `09${uuidDigits}`;
@@ -211,9 +262,9 @@ export class AuthService {
 
     return {
       session: authData.session ? {
-        access_token: authData.session.access_token,
-        refresh_token: authData.session.refresh_token,
-        expires_at: authData.session.expires_at,
+        access_token: authData.session?.access_token,
+        refresh_token: authData.session?.refresh_token,
+        expires_at: authData.session?.expires_at,
       } : null,
       user: {
         id: authData.user.id,
@@ -268,6 +319,71 @@ export class AuthService {
         email: data.user!.email,
       },
       profile: profile || null,
+    };
+  }
+
+  /**
+   * One-time bootstrap — creates the very first GENERAL_MANAGER account.
+   * Throws ForbiddenException if any profile already exists in the database.
+   */
+  async bootstrapFirstAdmin(email: string, password: string, fullName: string, phoneNumber?: string) {
+    // Safety check: only allowed when no profiles exist at all
+    const { count } = await this.supabaseService.getClient()
+      .from('profiles')
+      .select('id', { count: 'exact', head: true });
+
+    if (count && count > 0) {
+      throw new ForbiddenException('Bootstrap is disabled — system already has accounts. Contact your General Manager.');
+    }
+
+    const authClient = createClient(
+      this.configService.get<string>('SUPABASE_URL') || '',
+      this.configService.get<string>('SUPABASE_KEY') || '',
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+
+    const { data: authData, error: authError } = await authClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: Role.GENERAL_MANAGER,
+          phone_number: phoneNumber || null,
+        },
+      },
+    });
+
+    if (authError || !authData.user) {
+      throw new BadRequestException(authError?.message || 'Bootstrap account creation failed');
+    }
+
+    const profileData: Record<string, any> = {
+      id: authData.user.id,
+      full_name: fullName,
+      phone_number: phoneNumber || null,
+      role: Role.GENERAL_MANAGER,
+      role_id: null,
+      is_verified: true,
+      is_inspector_verified: false,
+      gamification_points: 0,
+      branch_id: null,
+    };
+
+    const { error: profileError } = await this.supabaseService.getClient()
+      .from('profiles')
+      .upsert(profileData);
+
+    if (profileError) {
+      this.logger.error(`Bootstrap profile creation failed: ${profileError.message}`);
+      throw new BadRequestException(`Bootstrap profile failed: ${profileError.message}`);
+    }
+
+    this.logger.log(`[BOOTSTRAP] First GM account created: ${email}`);
+
+    return {
+      message: 'System bootstrapped successfully. You can now log in.',
+      user: { id: authData.user.id, email: authData.user.email, role: Role.GENERAL_MANAGER },
     };
   }
 

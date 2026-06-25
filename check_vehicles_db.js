@@ -3,7 +3,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 async function run() {
-  const connectionString = process.env.DATABASE_URL || "postgresql://postgres:imhK3YrE2gv5G%28.@db.upylurzbdtuagbejyyuz.supabase.co:5432/postgres";
+  const connectionString = process.env.DATABASE_URL || "postgresql://postgres:AlphaOmegaFirstLast10@db.culpdlgvvqxdvbyhmuyi.supabase.co:5432/postgres";
   console.log("Using Connection String:", connectionString.replace(/:([^@]+)@/, ':****@'));
   const client = new Client({
     connectionString: connectionString,

@@ -2,7 +2,7 @@ const { Client } = require('pg');
 
 async function migrate() {
   const client = new Client({
-    connectionString: 'postgresql://postgres:imhK3YrE2gv5G%28.@db.upylurzbdtuagbejyyuz.supabase.co:5432/postgres',
+    connectionString: 'postgresql://postgres:AlphaOmegaFirstLast10@db.culpdlgvvqxdvbyhmuyi.supabase.co:5432/postgres',
     ssl: { rejectUnauthorized: false }
   });
 

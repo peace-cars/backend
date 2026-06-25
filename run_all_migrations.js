@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: '.env' });
 
-const url = process.env.SUPABASE_URL || 'https://upylurzbdtuagbejyyuz.supabase.co';
+const url = process.env.SUPABASE_URL || 'https://culpdlgvvqxdvbyhmuyi.supabase.co';
 const key = process.env.SUPABASE_KEY; // Using service_role key to run administrative SQL
 const supabase = createClient(url, key);
 

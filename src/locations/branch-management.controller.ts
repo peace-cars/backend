@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Logger, Req, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Logger, Req, UseInterceptors } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { RedisService } from '../redis/redis.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { ScopeGuard } from '../auth/scope.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -12,7 +13,10 @@ import { UpstashCacheInterceptor, CacheTTL } from '../redis/upstash-cache.interc
 export class BranchManagementController {
   private readonly logger = new Logger(BranchManagementController.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly redisService: RedisService
+  ) {}
  
   @Public()
   @Get('public')
@@ -262,5 +266,23 @@ export class BranchManagementController {
     
     if (error) return { success: false, message: error.message };
     return { success: true, isActive: !currentBranch.is_active };
+  }
+
+  @Delete(':id')
+  @Roles(Role.GENERAL_MANAGER)
+  async deleteBranch(@Param('id') id: string) {
+    const client = this.supabaseService.getClient();
+    
+    // First, unassign any staff members from this branch to prevent FK violations
+    await client.from('profiles').update({ branch_id: null }).eq('branch_id', id);
+
+    // Then delete the branch
+    const { error } = await client.from('branches').delete().eq('id', id);
+    if (error) return { success: false, message: error.message };
+
+    // Invalidate caches for branches
+    await this.redisService.delPattern('cache:*:/api/v1/locations*');
+
+    return { success: true };
   }
 }
