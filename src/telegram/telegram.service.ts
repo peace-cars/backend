@@ -82,6 +82,16 @@ export class TelegramService implements OnModuleInit {
 
     this.logger.log('🤖 PeaceCars Telegram Bot started.');
 
+    // Set Menu Button
+    const miniappUrl = this.config.get<string>('MINI_APP_URL') || 'https://miniapp.peacecars.com';
+    this.bot.setChatMenuButton({
+      menu_button: {
+        type: 'web_app',
+        text: '🚗 Open PeaceCars',
+        web_app: { url: miniappUrl }
+      }
+    }).catch((err: any) => this.logger.error('Failed to set menu button', err));
+
     this.registerHandlers();
   }
 
@@ -117,8 +127,13 @@ export class TelegramService implements OnModuleInit {
         const vehicleId = payload.replace('vehicle_', '').trim();
         await this.handleVehicleInquiry(chatId, vehicleId, msg);
       } else {
-        await this.sendWelcome(chatId);
+        await this.sendAppLauncher(chatId);
       }
+    });
+
+    // /app command
+    this.bot.onText(/\/app/, async (msg: any) => {
+      await this.sendAppLauncher(msg.chat.id);
     });
 
     // /buy command
@@ -237,8 +252,26 @@ export class TelegramService implements OnModuleInit {
     });
   }
 
-  // ─── Buy Form Flow ────────────────────────────────────────────────
+  // ─── App Launcher ──────────────────────────────────────────────────
 
+  private async sendAppLauncher(chatId: number) {
+    const miniappUrl = this.config.get<string>('MINI_APP_URL') || 'https://miniapp.peacecars.com';
+    await this.bot.sendMessage(
+      chatId,
+      '🚗 *PeaceCars — Ethiopia\'s Premier Car Marketplace*\n\nBrowse certified vehicles, join the community, track your sourcing requests and more — all inside Telegram.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🚀 Open PeaceCars App',
+            web_app: { url: miniappUrl }
+          }]]
+        }
+      }
+    );
+  }
+
+  // ─── Buy Form Flow ────────────────────────────────────────────────
   private async handleBuyCommand(chatId: number, vehicleId?: string) {
     const client = this.supabase.getClient();
     

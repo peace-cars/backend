@@ -489,7 +489,7 @@ export class TradeInRequestsService {
     const { data: vehicle, error: vErr } = await supabase
       .from('vehicles')
       .insert({
-        vin_chassis: vehicleData.vin || `TI-${leadId.substring(0, 8).toUpperCase()}`,
+        vin_chassis: vehicleData.vin || null,
         make: vehicleData.make || nameParts[0] || 'Unknown',
         model: vehicleData.model || nameParts.slice(1).join(' ') || 'Unknown',
         year: vehicleData.year || Number(details.year) || new Date().getFullYear(),

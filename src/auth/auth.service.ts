@@ -468,4 +468,28 @@ export class AuthService {
       profile: profileData,
     };
   }
+  async createSessionForUser(userId: string, role: string, profile: any) {
+    const jwtSecret = this.configService.get<string>('SUPABASE_JWT_SECRET');
+    if (!jwtSecret) {
+      throw new Error('Missing SUPABASE_JWT_SECRET');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      {
+        role: 'authenticated',
+        aud: 'authenticated',
+        sub: userId,
+        email: `tg_${userId}@tma.peacecars.com`,
+        user_role: role, // custom claim if needed
+      },
+      jwtSecret,
+      { expiresIn: '1h' }
+    );
+    return {
+      access_token: token,
+      refresh_token: 'dummy-refresh-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    };
+  }
 }

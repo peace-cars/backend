@@ -82,11 +82,14 @@ async function bootstrap() {
         'https://peace-cars-website.vercel.app',
         'https://peacecars.vercel.app',
         'https://staff-cyan.vercel.app',
+        'https://miniapp.peacecars.com',
+        'https://75d50176ace56214-196-190-62-200.serveousercontent.com',
       ];
 
       const isAllowed =
         allowedOrigins.includes(origin) ||
-        /^https:\/\/peacecars-.*\.vercel\.app$/.test(origin) || // Strict regex matching for Vercel environments
+        /^https:\/\/.*\.vercel\.app$/.test(origin) || // Allow any Vercel deployment
+        /^http:\/\/(127\.0\.0\.1|localhost|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin) || // Allow all local network IPs for development
         (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.split(',').includes(origin));
 
       if (isAllowed) {

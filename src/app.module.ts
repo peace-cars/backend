@@ -40,6 +40,7 @@ import { UploadModule } from './upload/upload.module';
 
 import { HealthController } from './common/health.controller';
 import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.module';
+import { MiniappModule } from './miniapp/miniapp.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { SourcingRequestsModule } from './sourcing-requests/sourcing-requests.mo
     ProfilesModule,
     SourcingRequestsModule,
     UploadModule,
+    MiniappModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

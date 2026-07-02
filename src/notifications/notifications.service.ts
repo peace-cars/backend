@@ -229,10 +229,16 @@ export class NotificationsService {
   ) {
     try {
       const client = this.supabaseService.getClient();
-      const { data: users } = await client
+      let query = client
         .from('profiles')
         .select('id')
         .eq('role', role);
+
+      if (role === 'STAFF') {
+        query = query.not('branch_id', 'is', null);
+      }
+
+      const { data: users } = await query;
 
       if (!users || users.length === 0) return;
 

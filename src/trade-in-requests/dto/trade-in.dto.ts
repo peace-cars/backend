@@ -10,8 +10,9 @@ export class CreateTradeInDto {
   @IsNumber()
   askingPrice: number;
 
+  @IsOptional()
   @IsString()
-  locationId: string;
+  locationId?: string;
 
   @IsOptional()
   @IsArray()
